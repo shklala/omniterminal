@@ -80,7 +80,8 @@ export async function detectShells(): Promise<ShellInfo[]> {
 
 export interface LaunchSpec {
   file: string;
-  args: string[];
+  /** argv, or (Windows) a raw, pre-quoted command line passed through untouched. */
+  args: string[] | string;
   /** Command to type into the terminal once it is ready (shells without a startup flag). */
   typeOnReady: string | null;
   extraEnv: Record<string, string>;
@@ -137,9 +138,11 @@ export function buildLaunchSpec(profile: Profile, shells: ShellInfo[], historyDi
       return { file: shell.path, args: ['-NoLogo', '-NoExit', '-EncodedCommand', encoded, ...profile.shellArgs], typeOnReady: null, extraEnv: {} };
     }
     case 'cmd': {
-      const args = ['/D'];
-      if (startup) args.push('/K', startup);
-      return { file: shell.path, args: [...args, ...profile.shellArgs], typeOnReady: null, extraEnv: { PROMPT: process.env.PROMPT || '$P$G' } };
+      // cmd.exe has its own quoting rules, so build the raw command line ourselves:
+      // with /S, cmd strips exactly the outer quotes and runs the rest verbatim.
+      const extra = profile.shellArgs.join(' ');
+      const raw = ['/D', extra, startup ? `/S /K "${startup}"` : ''].filter(Boolean).join(' ');
+      return { file: shell.path, args: raw, typeOnReady: null, extraEnv: { PROMPT: process.env.PROMPT || '$P$G' } };
     }
     case 'gitbash':
       return {

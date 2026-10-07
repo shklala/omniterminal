@@ -67,8 +67,24 @@ export function fmtBytes(n: number): string {
 }
 
 /** "claude · 412 MB" summary of what is running inside a terminal. */
-export function statsSummary(s: ResourceStats | undefined): string {
+export function statsSummary(s: ResourceStats | undefined, title = ''): string {
   if (!s) return '';
-  const running = [...new Set(s.children)].slice(0, 3).join(', ');
+  // Skip process names already visible in the program title ("claude · claude").
+  const running = [...new Set(s.children)].filter((c) => !title.toLowerCase().includes(c.toLowerCase())).slice(0, 3).join(', ');
   return `${running ? `${running} · ` : ''}${fmtBytes(s.memory)}`;
+}
+
+/**
+ * Turns a raw terminal title into something worth showing:
+ *   "Administrator: C:\WINDOWS\system32\cmd.exe - python  -q" → "python -q"
+ *   "C:\WINDOWS\system32\cmd.exe" → ""   (just the shell)
+ *   "claude" → "claude"
+ */
+export function cleanTitle(raw: string, profileName = ''): string {
+  let t = raw.trim().replace(/^administrator:\s*/i, '');
+  const m = /^(?:[a-z]:[\\/]|\/)[^]*?[\\/](?:cmd|powershell|pwsh|bash|wsl)(?:\.exe)?\s+-\s+(.+)$/i.exec(t);
+  if (m) t = m[1];
+  t = t.replace(/\s{2,}/g, ' ').trim();
+  if (SHELL_PATH_TITLE.test(t) || t === profileName) return '';
+  return t;
 }

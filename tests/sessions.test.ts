@@ -120,6 +120,19 @@ describe('PTY sessions (cmd)', () => {
     expect(st[p.id].processes).toBeGreaterThanOrEqual(2);
   });
 
+  it('passes cmd startup commands containing double quotes through intact', async () => {
+    const p = await ctx.service.profiles.create({
+      name: 'Quoted',
+      shellId: 'cmd',
+      startupCommand: `echo "quoted value" & node -e "console.log('NODE_' + (40 + 2))"`,
+    });
+    await ctx.service.sessions.start(p.id);
+    await waitFor(async () => {
+      const t = await text(p.id);
+      return t.includes('"quoted value"') && t.includes('NODE_42');
+    }, 20000);
+  });
+
   it('runs a startup command', async () => {
     const p = await ctx.service.profiles.create({ name: 'Startup', shellId: 'cmd', startupCommand: 'echo STARTUP_RAN_%OMNITERMINAL%' });
     await ctx.service.sessions.start(p.id);

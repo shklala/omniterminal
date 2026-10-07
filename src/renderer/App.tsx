@@ -382,7 +382,8 @@ export function App() {
   const dialogProfile = dialog && 'id' in dialog ? profileMap.get(dialog.id) : undefined;
   const runningCount = state.sessions.filter((s) => s.state === 'running').length;
   const activity = new Map([...hosts].map(([id, h]) => [id, h.activity] as [string, typeof h.activity]));
-  const titles = new Map([...hosts].map(([id, h]) => [id, h.title] as [string, string]));
+  // Program titles, minus the terminal's own name (PowerShell titles itself after the profile).
+  const titles = new Map([...hosts].map(([id, h]) => [id, h.title === profileMap.get(id)?.name ? '' : h.title] as [string, string]));
   const activeHost = activeProfile ? hosts.get(activeProfile.id) : undefined;
 
   const paletteItems: PaletteItem[] = [
@@ -391,7 +392,7 @@ export function App() {
       return {
         id: `t:${p.id}`,
         label: p.name,
-        hint: st === 'stopped' || st === 'exited' ? 'start' : st === 'disconnected' ? 'reconnect' : hosts.get(p.id)?.title || 'running',
+        hint: st === 'stopped' || st === 'exited' ? 'start' : st === 'disconnected' ? 'reconnect' : titles.get(p.id) || 'running',
         icon: 'terminal',
         color: p.color,
         group: 'Terminals',
@@ -463,7 +464,7 @@ export function App() {
             onStop={() => void stop(activeProfile.id)}
             onSettings={() => setDialog({ kind: 'settings', id: activeProfile.id })}
             onStart={() => openTerminal(activeProfile.id, true)}
-            programTitle={activeHost?.title ?? ''}
+            programTitle={titles.get(activeProfile.id) ?? ''}
             stats={stats[activeProfile.id]}
           />
         )}

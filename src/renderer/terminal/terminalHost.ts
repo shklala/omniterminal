@@ -7,7 +7,7 @@ import { SearchAddon } from '@xterm/addon-search';
 import type { Appearance } from '../../shared/types';
 import { api, bridge, errorMessage } from '../api';
 import { getTheme } from '../themes';
-import { SHELL_PATH_TITLE } from '../util';
+import { cleanTitle } from '../util';
 
 export type HostState = 'connecting' | 'attached' | 'exited' | 'error' | 'detached';
 /** Unseen activity in a background tab: new output, or the program rang the bell (wants attention). */
@@ -76,7 +76,7 @@ export class TerminalHost {
     this.term.onBell(() => this.markActivity('bell'));
     this.term.onTitleChange((t) => {
       // Shells often set the title to their own executable path; that is noise, not information.
-      this.title = SHELL_PATH_TITLE.test(t.trim()) ? '' : t;
+      this.title = cleanTitle(t);
       this.onActivity(this.activity);
     });
     this.term.onData((data) => this.input(data));

@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright-core';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -8,7 +9,8 @@ import type { AppState } from '../../src/shared/types';
 import { tempHome, waitFor } from '../helpers';
 
 const root = path.resolve(__dirname, '..', '..');
-const electronExe = path.join(root, 'node_modules', 'electron', 'dist', 'electron.exe');
+// Resolving the 'electron' package returns its binary path (and downloads it on first use).
+const electronExe = createRequire(import.meta.url)('electron') as string;
 const home = tempHome();
 const paths = getAppPaths({ ...process.env, OMNITERMINAL_HOME: home });
 const shots = process.env.OMNI_SCREENSHOT_DIR;

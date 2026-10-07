@@ -264,7 +264,7 @@ export function TopBar({
             {running && stats && (
               <>
                 <span className="sep">·</span>
-                <span title={`${stats.processes} process(es) in this terminal`}>{statsSummary(stats)}</span>
+                <span title={`${stats.processes} process(es) in this terminal`}>{statsSummary(stats, programTitle)}</span>
               </>
             )}
           </div>

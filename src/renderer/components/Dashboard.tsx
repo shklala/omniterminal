@@ -94,7 +94,7 @@ export function Dashboard({
                 <span>
                   <b>{p.name}</b>
                   {(st === 'running' || st === 'disconnected') && (stats[p.id] || titles.get(p.id)) ? (
-                    <em className="live-info">{[titles.get(p.id), statsSummary(stats[p.id])].filter(Boolean).join(' · ')}</em>
+                    <em className="live-info">{[titles.get(p.id), statsSummary(stats[p.id], titles.get(p.id))].filter(Boolean).join(' · ')}</em>
                   ) : (
                     p.description && <em>{p.description}</em>
                   )}

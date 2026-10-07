@@ -27,6 +27,8 @@ export function fuzzyScore(query: string, text: string): number | null {
     gaps += found - ti;
     ti = found + 1;
   }
+  // Letters scattered across a long label are noise, not a match.
+  if (gaps > q.length * 3) return null;
   return 100 + gaps;
 }
 
@@ -88,7 +90,9 @@ export function CommandPalette({ items, onClose }: { items: PaletteItem[]; onClo
             <button
               key={it.id}
               className={cx('palette-item', i === index && 'selected')}
-              onMouseEnter={() => setIndex(i)}
+              // mousemove, not mouseenter: a pointer resting where the list appears must not steal the
+              // selection from the top match while the user is typing.
+              onMouseMove={() => i !== index && setIndex(i)}
               onClick={() => runAt(i)}
             >
               {it.color ? <span className="profile-color" style={{ background: it.color }} /> : <Icon name={it.icon} size={14} />}

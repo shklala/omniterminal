@@ -9,7 +9,7 @@ export interface PtySessionOptions {
   sessionId: string;
   profileId: string;
   file: string;
-  args: string[];
+  args: string[] | string;
   cwd: string;
   env: Record<string, string>;
   cols: number;

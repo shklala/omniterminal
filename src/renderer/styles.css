@@ -423,3 +423,9 @@ kbd { font-family: var(--font-mono); font-size: 10.5px; padding: 1px 6px; border
 .preset:hover { color: var(--text); border-color: #3b4a5e; }
 .preset.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .live-info { color: #8fb3ff !important; }
+.settings-nav { position: sticky; top: 0; align-self: start; }
+.token-label { flex-wrap: wrap; }
+/* Settings dialog: only the content pane scrolls; the section nav stays put. */
+.dialog-wide .dialog-body { overflow: hidden; display: flex; flex-direction: column; }
+.dialog-wide .settings-layout { flex: 1; min-height: 0; height: auto; grid-template-rows: minmax(0, 1fr); }
+.dialog-wide .settings-content { overflow-y: auto; min-height: 0; padding-right: 8px; }

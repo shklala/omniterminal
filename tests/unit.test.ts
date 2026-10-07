@@ -193,3 +193,24 @@ describe('command palette fuzzy match', () => {
     expect(fuzzyScore('', 'anything')).toBe(0);
   });
 });
+
+describe('program title cleanup', () => {
+  it('extracts the running command and drops plain shell titles', async () => {
+    const { cleanTitle, statsSummary } = await import('../src/renderer/util');
+    expect(cleanTitle(String.raw`Administrator: C:\WINDOWS\system32\cmd.exe - python  -q`)).toBe('python -q');
+    expect(cleanTitle(String.raw`C:\WINDOWS\system32\cmd.exe`)).toBe('');
+    expect(cleanTitle(String.raw`C:\Program Files\PowerShell\7\pwsh.exe`)).toBe('');
+    expect(cleanTitle('claude')).toBe('claude');
+    expect(cleanTitle('Client X', 'Client X')).toBe('');
+    expect(statsSummary({ memory: 300 * 1024 * 1024, processes: 2, children: ['claude'] }, 'claude')).toBe('300 MB');
+    expect(statsSummary({ memory: 300 * 1024 * 1024, processes: 2, children: ['node'] }, 'claude')).toBe('node · 300 MB');
+  });
+});
+
+describe('command palette noise filter', () => {
+  it('does not match letters scattered across a long label', async () => {
+    const { fuzzyScore } = await import('../src/renderer/components/CommandPalette');
+    expect(fuzzyScore('cli', 'Exit Completely (stop everything)')).toBeNull();
+    expect(fuzzyScore('cli', 'Client X · Supabase')).toBe(0);
+  });
+});
