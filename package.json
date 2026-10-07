@@ -1,0 +1,87 @@
+{
+  "name": "omniterminal",
+  "version": "1.1.0",
+  "description": "Multi-Terminal Manager for Windows: unlimited independent, persistent terminal sessions with isolated CLI identities.",
+  "main": "dist/main.js",
+  "scripts": {
+    "build:node": "node scripts/build.mjs",
+    "build:renderer": "vite build --config vite.config.mts",
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "npm run typecheck && npm run build:node && npm run build:renderer",
+    "dev": "node scripts/dev.mjs",
+    "start": "npm run build && electron .",
+    "test": "vitest run",
+    "test:e2e": "npm run build && vitest run --config vitest.e2e.config.mts",
+    "test:all": "npm test && npm run test:e2e",
+    "dist": "npm run build && electron-builder --win nsis zip",
+    "dist:dir": "npm run build && electron-builder --win dir"
+  },
+  "author": "Omar Mohamed Fawzy",
+  "license": "MIT",
+  "dependencies": {
+    "@xterm/addon-serialize": "^0.14.0",
+    "@xterm/headless": "^6.0.0",
+    "node-pty": "^1.1.0",
+    "sql.js": "^1.14.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/sql.js": "^1.4.11",
+    "@vitejs/plugin-react": "^6.1.2",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-search": "^0.16.0",
+    "@xterm/addon-unicode11": "^0.9.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/addon-webgl": "^0.19.0",
+    "@xterm/xterm": "^6.0.0",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.64.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.3",
+    "vitest": "^5.0.3"
+  },
+  "productName": "OmniTerminal",
+  "private": true,
+  "build": {
+    "appId": "com.omniterminal.app",
+    "productName": "OmniTerminal",
+    "copyright": "OmniTerminal",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "!dist/**/*.map",
+      "build/icon.ico",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**"
+    ],
+    "npmRebuild": false,
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "OmniTerminal-${version}-win-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "OmniTerminal",
+      "artifactName": "OmniTerminal-Setup-${version}.exe"
+    }
+  }
+}
