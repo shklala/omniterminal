@@ -256,14 +256,17 @@ export class SessionManager {
     this.log.info(`Session ${sessionId} started for ${profileId} (pid ${session.pid})`);
 
     // Record the process start time so a future manager can safely identify orphans.
-    void getProcessStartTime(session.pid).then((t) => {
-      if (t) this.db.run('UPDATE sessions SET pid_start = ? WHERE id = ?', [t, sessionId]);
-    });
+    // The lookup takes a moment; the manager may have shut down by the time it returns.
+    void getProcessStartTime(session.pid)
+      .then((t) => {
+        if (t && this.db.isOpen) this.db.run('UPDATE sessions SET pid_start = ? WHERE id = ?', [t, sessionId]);
+      })
+      .catch((e) => this.log.warn(`Could not record start time for pid ${session.pid}: ${(e as Error).message}`));
 
     session.onExit((code) => {
       // The program ended by itself or was stopped: nothing to restore later.
       this.clearSnapshot(profileId);
-      this.db.run("UPDATE sessions SET status = 'exited', ended_at = ?, exit_code = ? WHERE id = ?", [Date.now(), code, sessionId]);
+      if (this.db.isOpen) this.db.run("UPDATE sessions SET status = 'exited', ended_at = ?, exit_code = ? WHERE id = ?", [Date.now(), code, sessionId]);
       this.profileLog(profile, `session ${sessionId} exited code=${code}`);
       this.log.info(`Session ${sessionId} exited (${code})`);
       Object.values(secretValues).forEach((v) => this.log.forgetSecret(v));

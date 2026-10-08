@@ -165,6 +165,11 @@ export class Db {
     }
   }
 
+  /** False once close() ran (late async callbacks check this before writing). */
+  get isOpen(): boolean {
+    return this.db.isOpen;
+  }
+
   close(): void {
     this.flush();
     this.db.close();
