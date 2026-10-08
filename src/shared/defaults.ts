@@ -30,6 +30,12 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   language: 'en',
   restoreAfterRestart: true,
   suggestions: true,
+  notifyAfterSeconds: 15,
+  minimizeToTray: false,
+  globalHotkey: '',
+  dropDown: false,
+  autoUpdate: true,
+  keybindings: {},
 };
 
 export const PROFILE_COLORS = [

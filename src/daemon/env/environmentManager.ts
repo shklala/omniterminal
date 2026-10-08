@@ -4,6 +4,7 @@ import type { Profile } from '../../shared/types';
 import { ValidationError, safeJoin, validateEnvName } from '../../shared/validation';
 import { ensureDir, ensureFile } from '../fsutil';
 import type { RegistryEnvironment } from '../windows/registryEnv';
+import { sshEnvironment } from './ssh';
 
 /** Case-insensitive environment map that preserves the original casing (Windows semantics). */
 export class EnvMap {
@@ -165,6 +166,10 @@ export function buildEnvironment(input: BuildEnvInput): BuiltEnv {
   for (const name of profile.advanced.unsetVars) env.delete(name);
 
   const redirected = applyToolMappings(profile, env, true);
+  for (const [k, v] of Object.entries(sshEnvironment(profile))) {
+    env.set(k, v);
+    redirected[k] = v;
+  }
 
   env.set('OMNITERMINAL', '1');
   env.set('OMNITERMINAL_PROFILE', profile.name);

@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Profile, ShellInfo } from '../../shared/types';
+import { PS_SSH_FUNCTIONS } from '../env/ssh';
 
 function exists(p: string | undefined): p is string {
   try {
@@ -122,6 +123,7 @@ export function powershellBootstrap(historyFile: string, startupCommand: string,
     ...(suggestions ? psSuggestionLines() : []),
     `  }`,
     `} catch { }`,
+    ...PS_SSH_FUNCTIONS,
   ];
   if (startupCommand.trim()) lines.push(startupCommand);
   return lines.join('\n');

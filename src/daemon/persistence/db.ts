@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import type { Logger } from '../log';
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const MIGRATIONS: Record<number, string> = {
   1: `
@@ -32,6 +32,8 @@ const MIGRATIONS: Record<number, string> = {
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS ui_prefs (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   `,
+  // 1.3: remember which sessions ran as administrator, so a restore can say it came back without.
+  2: `ALTER TABLE sessions ADD COLUMN elevated INTEGER NOT NULL DEFAULT 0;`,
 };
 
 export type Row = Record<string, string | number | null | Uint8Array>;

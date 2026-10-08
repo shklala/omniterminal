@@ -54,10 +54,13 @@ $all = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessI
 $byParent = @{}
 foreach ($p in $all) { $k = [int]$p.ParentProcessId; if (-not $byParent.ContainsKey($k)) { $byParent[$k] = New-Object System.Collections.ArrayList }; [void]$byParent[$k].Add($p) }
 $killed = New-Object System.Collections.Generic.List[int]
+# The recorded start time comes from Get-Process (100 ns ticks); WMI's CreationDate only has
+# microseconds. Allow 1 ms so the same process still matches; a reused PID never starts that close.
+$tol = 10000
 function Kill-Desc([int]$ppid, [long]$after) {
   if (-not $byParent.ContainsKey($ppid)) { return }
   foreach ($c in $byParent[$ppid]) {
-    if ($c.CreationDate -and $c.CreationDate.ToFileTimeUtc() -ge $after) {
+    if ($c.CreationDate -and $c.CreationDate.ToFileTimeUtc() -ge ($after - $tol)) {
       Kill-Desc ([int]$c.ProcessId) $after
       Stop-Process -Id $c.ProcessId -Force -ErrorAction SilentlyContinue
       $killed.Add([int]$c.ProcessId)
@@ -69,7 +72,7 @@ foreach ($cand in @($req)) {
   $start = [long]$cand.startTime
   $root = $all | Where-Object { $_.ProcessId -eq $cand.pid } | Select-Object -First 1
   if ($root) {
-    if ($root.CreationDate.ToFileTimeUtc() -ne $start) { continue }
+    if ([math]::Abs($root.CreationDate.ToFileTimeUtc() - $start) -gt $tol) { continue }
     Kill-Desc ([int]$cand.pid) $start
     Stop-Process -Id $cand.pid -Force -ErrorAction SilentlyContinue
     $killed.Add([int]$cand.pid)

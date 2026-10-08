@@ -57,8 +57,20 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     isolation: 'full',
     notes:
       'Global git config (user.name, user.email, aliases) is per terminal. Git Credential Manager entries in Windows Credential Manager are namespaced per terminal via GCM_NAMESPACE, ' +
-      'so HTTPS logins do not collide. The system gitconfig (Program Files) still applies. SSH keys are NOT isolated (see Limitations).',
+      'so HTTPS logins do not collide. The system gitconfig (Program Files) still applies. For SSH remotes, turn on "SSH key for this terminal".',
     defaultEnabled: true,
+  },
+  {
+    id: 'ssh-key',
+    group: 'code',
+    name: 'SSH key for this terminal',
+    category: 'cli',
+    mappings: [],
+    isolation: 'partial',
+    notes:
+      "Git over SSH (in every shell) and ssh/scp/sftp in PowerShell use only this terminal's key and known_hosts, kept in config\\ssh in its folder. " +
+      'Create the key here, then add the public key to GitHub or GitLab. Nothing changes until a key exists. Plain ssh in Command Prompt and Git Bash, and the Windows ssh-agent, are still shared.',
+    defaultEnabled: false,
   },
   {
     id: 'azure',
@@ -430,8 +442,8 @@ export const LIMITATIONS: ToolDefinition[] = [
     mappings: [],
     isolation: 'shared',
     notes:
-      'OpenSSH for Windows always reads %USERPROFILE%\\.ssh and the system-wide ssh-agent service. Keys and known_hosts are shared. ' +
-      'Workaround: keep per-terminal keys in <profile>\\config\\ssh and add GIT_SSH_COMMAND="ssh -i <key> -F <config>" as a variable.',
+      'OpenSSH for Windows always reads %USERPROFILE%\\.ssh and the system-wide ssh-agent service. ' +
+      'Turn on "SSH key for this terminal" (Git and PowerShell) to give a terminal its own key; plain ssh in Command Prompt and Git Bash still uses the shared one.',
     defaultEnabled: false,
   },
   {

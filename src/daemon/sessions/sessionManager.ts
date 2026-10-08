@@ -13,6 +13,7 @@ import { buildLaunchSpec } from '../pty/shells';
 import { cleanupOrphans, getProcessStartTime, getTreeStats, killTree, type TreeStats } from '../windows/processes';
 import { readRegistryEnvironment } from '../windows/registryEnv';
 import { elevatedShellCommand, getElevationStatus, wrapWithSudo } from '../windows/elevation';
+import { isPsReadLineInstalled } from '../windows/psreadline';
 import { baseProfileId, instanceNumber, isValidSessionKey, makeSessionKey } from '../../shared/sessionKey';
 
 export interface SessionEvents {
@@ -24,6 +25,8 @@ export interface SessionEvents {
 export interface SessionManagerOptions {
   /** Skip the registry environment refresh (tests). */
   skipRegistryEnv?: boolean;
+  /** OmniTerminal's own PowerShell modules folder (PSReadLine for suggestions). */
+  modulesDir?: string;
 }
 
 /**
@@ -67,6 +70,7 @@ export class SessionManager {
     const rows = this.db.all("SELECT * FROM sessions WHERE status = 'running' AND daemon_pid != ?", [process.pid]);
     if (rows.length === 0) return 0;
     const toRestore = [...new Set(rows.map((r) => String(r.profile_id)))];
+    const wasElevated = new Set(rows.filter((r) => Number(r.elevated) === 1).map((r) => String(r.profile_id)));
     const killed = await cleanupOrphans(
       rows.filter((r) => r.pid != null).map((r) => ({ pid: Number(r.pid), startTime: r.pid_start == null ? null : String(r.pid_start) })),
     );
@@ -79,7 +83,7 @@ export class SessionManager {
       for (const profileId of toRestore) {
         if (!this.profiles.find(baseProfileId(profileId))) continue;
         try {
-          await this.start(profileId, undefined, false, true);
+          await this.start(profileId, undefined, false, wasElevated.has(profileId) ? 'elevated' : true);
           this.log.info(`Restored terminal ${profileId} after restart`);
         } catch (e) {
           this.log.warn(`Could not restore terminal ${profileId}`, e);
@@ -101,10 +105,16 @@ export class SessionManager {
     this.snapshotTimer.unref();
   }
 
-  async saveSnapshots(): Promise<void> {
+  stopSnapshots(): void {
+    if (this.snapshotTimer) clearInterval(this.snapshotTimer);
+    this.snapshotTimer = null;
+  }
+
+  /** `force` also saves screens that did not change since the last snapshot (before an update). */
+  async saveSnapshots(force = false): Promise<void> {
     if (!this.snapshotsEnabled()) return;
     for (const s of this.sessions.values()) {
-      if (!s.alive || !s.dirty) continue;
+      if (!s.alive || (!s.dirty && !force)) continue;
       const profile = this.profiles.find(baseProfileId(s.profileId));
       if (!profile) continue;
       try {
@@ -162,7 +172,8 @@ export class SessionManager {
   }
 
   /** Starts the session for a profile if it is not already running. Idempotent. */
-  async start(profileId: string, size?: { cols: number; rows: number }, elevated = false, restore = false): Promise<SessionInfo> {
+  /** `restore`: show the saved screen first; 'elevated' also notes it ran as administrator before. */
+  async start(profileId: string, size?: { cols: number; rows: number }, elevated = false, restore: boolean | 'elevated' = false): Promise<SessionInfo> {
     const existing = this.sessions.get(profileId);
     if (existing?.alive) return this.info(existing);
     const inflight = this.starting.get(profileId);
@@ -173,7 +184,7 @@ export class SessionManager {
     return this.info(await p);
   }
 
-  private async launch(profileId: string, size?: { cols: number; rows: number }, elevated = false, restore = false): Promise<PtySession> {
+  private async launch(profileId: string, size?: { cols: number; rows: number }, elevated = false, restore: boolean | 'elevated' = false): Promise<PtySession> {
     if (!isValidSessionKey(profileId)) throw new ValidationError('Invalid terminal id.');
     const profile = this.profiles.get(baseProfileId(profileId));
     const old = this.sessions.get(profileId);
@@ -208,13 +219,19 @@ export class SessionManager {
     Object.values(secretValues).forEach((v) => this.log.registerSecret(v));
     const registry = this.opts.skipRegistryEnv || !profile.advanced.refreshEnvironment ? null : await readRegistryEnvironment();
     const shell = this.shells.find((s) => s.id === profile.shellId);
+    const extraEnv: Record<string, string> = { ...spec.extraEnv, OMNITERMINAL_INSTANCE: String(instanceNumber(profileId)) };
+    // Windows PowerShell 5.1 ships PSReadLine 2.0; the newer copy from "Turn on suggestions" goes first.
+    const modulesDir = this.opts.modulesDir;
+    if (shell?.kind === 'powershell' && modulesDir && this.suggestionsEnabled() && isPsReadLineInstalled(modulesDir)) {
+      extraEnv.PSModulePath = [modulesDir, process.env.PSModulePath].filter(Boolean).join(';');
+    }
     const built = buildEnvironment({
       profile,
       sessionId,
       secrets: secretValues,
       baseEnv: process.env,
       registry,
-      extraEnv: { ...spec.extraEnv, OMNITERMINAL_INSTANCE: String(instanceNumber(profileId)) },
+      extraEnv,
       isWsl: shell?.kind === 'wsl',
     });
 
@@ -230,7 +247,7 @@ export class SessionManager {
         file: launchFile,
         args: launchArgs,
         elevated,
-        preamble: restore ? this.restoredOutput(profile.dir, profileId) : undefined,
+        preamble: restore ? this.restoredOutput(profile.dir, profileId, restore === 'elevated') : undefined,
         cwd,
         env: built.env,
         cols,
@@ -248,8 +265,8 @@ export class SessionManager {
 
     this.sessions.set(profileId, session);
     this.db.run(
-      "INSERT INTO sessions (id, profile_id, pid, pid_start, daemon_pid, started_at, status) VALUES (?, ?, ?, NULL, ?, ?, 'running')",
-      [sessionId, profileId, session.pid, process.pid, session.startedAt],
+      "INSERT INTO sessions (id, profile_id, pid, pid_start, daemon_pid, started_at, status, elevated) VALUES (?, ?, ?, NULL, ?, ?, 'running', ?)",
+      [sessionId, profileId, session.pid, process.pid, session.startedAt, elevated ? 1 : 0],
     );
     this.profiles.touch(profile.id);
     this.profileLog(profile, `session ${sessionId} started pid=${session.pid} shell=${profile.shellId} cwd=${cwd}`);
@@ -278,16 +295,28 @@ export class SessionManager {
     return session;
   }
 
-  /** Saved screen from before the restart, followed by a dim marker line. */
-  private restoredOutput(profileDir: string, key: string): string | undefined {
+  /** Saved screen from before the restart, followed by a dim marker line (and an admin note). */
+  private restoredOutput(profileDir: string, key: string, wasElevated = false): string | undefined {
     const file = this.snapshotFile(profileDir, key);
+    const adminNote = wasElevated
+      ? '\x1b[33m[This terminal ran as administrator before the restart. It reopened WITHOUT administrator rights; use Run as Administrator to elevate it again.]\x1b[0m\r\n'
+      : '';
     try {
-      if (!fs.existsSync(file) || fs.statSync(file).size > 8 * 1024 * 1024) return undefined;
+      if (!fs.existsSync(file) || fs.statSync(file).size > 8 * 1024 * 1024) return adminNote || undefined;
       const saved = fs.readFileSync(file, 'utf8');
-      return `${saved}\x1b[0m\r\n\x1b[2m[Restored after restart. Output above is from the previous session.]\x1b[0m\r\n`;
+      return `${saved}\x1b[0m\r\n\x1b[2m[Restored after restart. Output above is from the previous session.]\x1b[0m\r\n${adminNote}`;
     } catch {
-      return undefined;
+      return adminNote || undefined;
     }
+  }
+
+  /** Environment a terminal's programs would see (for "Check with the tool's own command"). */
+  async environmentFor(profileId: string): Promise<{ env: Record<string, string>; secrets: string[]; cwd: string }> {
+    const profile = this.profiles.get(baseProfileId(profileId));
+    const secretNames = profile.env.filter((v) => v.secret).map((v) => v.name);
+    const secretValues = secretNames.length ? await this.secrets.getAll(profile.dir, profile.id, secretNames) : {};
+    const built = buildEnvironment({ profile, sessionId: 'whoami', secrets: secretValues, baseEnv: process.env, registry: null, extraEnv: {}, isWsl: false });
+    return { env: built.env, secrets: Object.values(secretValues), cwd: this.resolveCwd(profile) };
   }
 
   private resolveCwd(profile: Profile): string {

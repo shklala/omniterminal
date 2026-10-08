@@ -62,12 +62,14 @@ async function main(): Promise<void> {
   );
 
   let shuttingDown = false;
-  const shutdown = async (reason: string) => {
+  /** `handoff`: leave terminals recorded as running so the next manager (after an update) restores them. */
+  const shutdown = async (reason: string, handoff = false) => {
     if (shuttingDown) return;
     shuttingDown = true;
     log.info(`Shutting down: ${reason}`);
     try {
-      await service.shutdown();
+      if (handoff) await service.handoff();
+      else await service.shutdown();
     } catch (e) {
       log.error('Error during shutdown', e);
     }
@@ -81,7 +83,7 @@ async function main(): Promise<void> {
     await log.close();
     process.exit(0);
   };
-  service.onShutdownRequested(() => void shutdown('requested by GUI ("Exit completely")'));
+  service.onShutdownRequested((handoff) => void shutdown(handoff ? 'update: handing terminals to the new version' : 'requested by GUI ("Exit completely")', handoff));
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 

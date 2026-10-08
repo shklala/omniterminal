@@ -2,7 +2,13 @@ import * as fs from 'node:fs';
 import { APP_VERSION, DEFAULT_APP_SETTINGS } from '../shared/defaults';
 import type { AppPaths } from '../shared/paths';
 import { LIMITATIONS, TOOL_REGISTRY } from '../shared/tools';
-import { THEME_COLOR_KEYS, type AppSettings, type AppState, type CustomTheme, type DaemonInfo, type ProfileInput } from '../shared/types';
+import { THEME_COLOR_KEYS, type AppSettings, type AppState, type CustomTheme, type DaemonInfo, type ProfileInput, type Snippet, type Workspace } from '../shared/types';
+import { execFile } from 'node:child_process';
+import { getTool } from '../shared/tools';
+import { redact } from '../shared/redact';
+import { readAccounts } from './profiles/accounts';
+import { createSshKey, sshStatus } from './env/ssh';
+import { PSREADLINE_VERSION, installPsReadLine, isPsReadLineInstalled } from './windows/psreadline';
 import * as crypto from 'node:crypto';
 import * as path from 'node:path';
 import { ValidationError } from '../shared/validation';
@@ -25,6 +31,27 @@ export interface ServiceOptions {
 
 type Size = { cols: number; rows: number } | undefined;
 
+export const SUPPORTED_LANGUAGES = ['en', 'ar', 'es', 'fr', 'de', 'zh'];
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+function cleanName(v: unknown, what: string): string {
+  const name = String(v ?? '').trim();
+  if (/[\u0000-\u001f]/.test(name)) throw new ValidationError(`${what} cannot contain control characters.`);
+  if (!name || name.length > 60) throw new ValidationError(`${what} must be 1 to 60 characters.`);
+  return name;
+}
+
+/** Keybindings from the settings page: known-looking action ids and short key strings only. */
+function validKeybindings(v: unknown): Record<string, string> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) throw new ValidationError('Invalid keyboard shortcuts');
+  const out: Record<string, string> = {};
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    if (!/^[a-z][a-zA-Z0-9.-]{0,40}$/.test(k) || typeof val !== 'string' || val.length > 40) throw new ValidationError('Invalid keyboard shortcut');
+    out[k] = val;
+  }
+  return out;
+}
+
 function size(p: Record<string, unknown>): Size {
   const cols = Number(p.cols);
   const rows = Number(p.rows);
@@ -46,7 +73,7 @@ export class OmniService {
   db!: Db;
   profiles!: ProfileManager;
   sessions!: SessionManager;
-  private shutdownHandler: (() => void) | null = null;
+  private shutdownHandler: ((handoff: boolean) => void) | null = null;
 
   constructor(private readonly opts: ServiceOptions) {}
 
@@ -60,6 +87,7 @@ export class OmniService {
     this.profiles.recoverFromMetadata();
     this.sessions = new SessionManager(this.db, this.profiles, secrets, log, this.opts.events, {
       skipRegistryEnv: this.opts.skipRegistryEnv,
+      modulesDir: this.modulesDir,
     });
     this.sessions.setShells(await detectShells());
     await this.sessions.recoverOrphans({ restore: this.getSettings().restoreAfterRestart });
@@ -69,8 +97,12 @@ export class OmniService {
     this.db.flush();
   }
 
-  onShutdownRequested(handler: () => void): void {
+  onShutdownRequested(handler: (handoff: boolean) => void): void {
     this.shutdownHandler = handler;
+  }
+
+  get modulesDir(): string {
+    return path.join(this.opts.paths.home, 'modules');
   }
 
   info(): DaemonInfo {
@@ -97,7 +129,10 @@ export class OmniService {
       const expected = typeof DEFAULT_APP_SETTINGS[key];
       if (typeof patch[key] !== expected) throw new ValidationError(`Invalid value for setting ${key}`);
       if (key === 'uiTheme' && !['system', 'dark', 'light', 'midnight', 'nord'].includes(String(patch[key]))) throw new ValidationError('Invalid theme');
-      if (key === 'language' && !['en', 'ar'].includes(String(patch[key]))) throw new ValidationError('Unsupported language');
+      if (key === 'language' && !SUPPORTED_LANGUAGES.includes(String(patch[key]))) throw new ValidationError('Unsupported language');
+      if (key === 'notifyAfterSeconds' && !(Number.isInteger(patch[key]) && Number(patch[key]) >= 0 && Number(patch[key]) <= 86_400)) throw new ValidationError('Invalid notification delay');
+      if (key === 'globalHotkey' && String(patch[key]).length > 40) throw new ValidationError('Invalid shortcut');
+      if (key === 'keybindings') patch.keybindings = validKeybindings(patch.keybindings);
       this.db.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, JSON.stringify(patch[key])]);
     }
     // Turning restore off also removes the saved copies of terminal output.
@@ -115,6 +150,96 @@ export class OmniService {
       }
     }
     return out;
+  }
+
+  // ---------- snippets and workspaces (small JSON lists in the settings table) ----------
+  private getList<T>(key: string): T[] {
+    const row = this.db.get('SELECT value FROM settings WHERE key = ?', [key]);
+    try {
+      const list = row ? JSON.parse(String(row.value)) : [];
+      return Array.isArray(list) ? list : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private setList(key: string, list: unknown[]): void {
+    this.db.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, JSON.stringify(list)]);
+  }
+
+  getSnippets(): Snippet[] {
+    return this.getList<Snippet>('snippets');
+  }
+
+  saveSnippet(input: Partial<Snippet>): Snippet {
+    const name = cleanName(input.name, 'Snippet name');
+    const command = String(input.command ?? '');
+    if (!command.trim() || command.length > 4000) throw new ValidationError('The command must be 1 to 4000 characters.');
+    const profileId = typeof input.profileId === 'string' && input.profileId ? input.profileId : null;
+    if (profileId && !this.profiles.find(profileId)) throw new ValidationError('That terminal no longer exists.');
+    const list = this.getSnippets();
+    const id = typeof input.id === 'string' && UUID_RE.test(input.id) ? input.id : crypto.randomUUID();
+    const snippet: Snippet = { id, name, command, profileId, run: input.run !== false };
+    const i = list.findIndex((x) => x.id === id);
+    if (i >= 0) list[i] = snippet;
+    else list.push(snippet);
+    if (list.length > 500) throw new ValidationError('Too many snippets.');
+    this.setList('snippets', list);
+    return snippet;
+  }
+
+  deleteSnippet(id: string): void {
+    this.setList('snippets', this.getSnippets().filter((x) => x.id !== id));
+  }
+
+  getWorkspaces(): Workspace[] {
+    return this.getList<Workspace>('workspaces');
+  }
+
+  saveWorkspace(input: Partial<Workspace>): Workspace {
+    const name = cleanName(input.name, 'Workspace name');
+    const tabs = Array.isArray(input.tabs) ? input.tabs : [];
+    if (tabs.length === 0 || tabs.length > 30) throw new ValidationError('A workspace needs 1 to 30 tabs.');
+    const clean = tabs.map((t) => {
+      const panes = Array.isArray(t?.panes) ? t.panes : [];
+      if (panes.length === 0 || panes.length > 4) throw new ValidationError('Each workspace tab has 1 to 4 terminals.');
+      return {
+        direction: t.direction === 'column' ? ('column' as const) : ('row' as const),
+        panes: panes.map((p) => {
+          const id = String(p?.profileId ?? '');
+          if (!this.profiles.find(id)) throw new ValidationError('A terminal in this workspace no longer exists.');
+          return { profileId: id, another: p.another === true };
+        }),
+      };
+    });
+    const list = this.getWorkspaces();
+    const id = typeof input.id === 'string' && UUID_RE.test(input.id) ? input.id : crypto.randomUUID();
+    const ws: Workspace = { id, name, tabs: clean };
+    const i = list.findIndex((x) => x.id === id);
+    if (i >= 0) list[i] = ws;
+    else list.push(ws);
+    this.setList('workspaces', list);
+    return ws;
+  }
+
+  deleteWorkspace(id: string): void {
+    this.setList('workspaces', this.getWorkspaces().filter((x) => x.id !== id));
+  }
+
+  /** Runs a tool's own "who am I" command in the terminal's environment (output redacted, 20 s limit). */
+  async runWhoami(profileId: string, toolId: string): Promise<string> {
+    const tool = getTool(toolId);
+    if (!tool?.whoami) throw new ValidationError('This tool has no account command.');
+    const { env, secrets, cwd } = await this.sessions.environmentFor(profileId);
+    const comspec = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
+    return new Promise((resolve) => {
+      execFile(comspec, ['/d', '/s', '/c', tool.whoami!], { env, cwd, windowsHide: true, timeout: 20_000, maxBuffer: 256 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
+        let text = `${stdout ?? ''}${stderr ?? ''}`.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trim();
+        if (!text && err) text = (err as NodeJS.ErrnoException).code === 'ETIMEDOUT' || err.killed ? 'The command took too long.' : err.message;
+        if (/is not recognized as an internal or external command/i.test(text)) text = `${tool.whoami!.split(' ')[0]} is not installed (or not on PATH).`;
+        resolve(redact(text.slice(0, 4000), secrets));
+      });
+    });
   }
 
   // ---------- custom terminal themes ----------
@@ -178,6 +303,8 @@ export class OmniService {
       limitations: LIMITATIONS,
       settings: this.getSettings(),
       customThemes: this.getCustomThemes(),
+      snippets: this.getSnippets(),
+      workspaces: this.getWorkspaces(),
     };
   }
 
@@ -293,6 +420,46 @@ export class OmniService {
         this.deleteCustomTheme(str(p, 'id'));
         changed('themes');
         return true;
+      case 'snippets.save': {
+        const s = this.saveSnippet((p.snippet ?? {}) as Partial<Snippet>);
+        changed('snippets');
+        return s;
+      }
+      case 'snippets.delete':
+        this.deleteSnippet(str(p, 'id'));
+        changed('snippets');
+        return true;
+      case 'workspaces.save': {
+        const w = this.saveWorkspace((p.workspace ?? {}) as Partial<Workspace>);
+        changed('workspaces');
+        return w;
+      }
+      case 'workspaces.delete':
+        this.deleteWorkspace(str(p, 'id'));
+        changed('workspaces');
+        return true;
+
+      case 'profiles.accounts': {
+        const profile = this.profiles.get(baseProfileId(str(p, 'id')));
+        return readAccounts(profile, new Set(profile.env.filter((v) => v.secret && v.hasValue).map((v) => v.name)));
+      }
+      case 'profiles.whoami':
+        return this.runWhoami(baseProfileId(str(p, 'id')), str(p, 'toolId'));
+
+      case 'ssh.status':
+        return sshStatus(this.profiles.get(baseProfileId(str(p, 'id'))));
+      case 'ssh.createKey': {
+        const status = await createSshKey(this.profiles.get(baseProfileId(str(p, 'id'))));
+        changed('ssh');
+        return status;
+      }
+
+      case 'system.suggestions':
+        return { installed: isPsReadLineInstalled(this.modulesDir), version: PSREADLINE_VERSION };
+      case 'system.installSuggestions':
+        await installPsReadLine(this.modulesDir);
+        return { installed: isPsReadLineInstalled(this.modulesDir), version: PSREADLINE_VERSION };
+
       case 'settings.get':
         return this.getSettings();
       case 'settings.set': {
@@ -316,7 +483,12 @@ export class OmniService {
         return { rss: mb(m.rss), heapUsed: mb(m.heapUsed), heapTotal: mb(m.heapTotal), external: mb(m.external), arrayBuffers: mb(m.arrayBuffers), sessions: this.sessions.list().length };
       }
       case 'daemon.shutdown':
-        setTimeout(() => this.shutdownHandler?.(), 10);
+        setTimeout(() => this.shutdownHandler?.(false), 10);
+        return true;
+      case 'daemon.handoff':
+        // Before installing an update: save every screen, then exit leaving terminals marked running
+        // so the new version's manager restores them.
+        setTimeout(() => this.shutdownHandler?.(true), 10);
         return true;
       default:
         throw new ValidationError(`Unknown method: ${method}`);
@@ -325,6 +497,13 @@ export class OmniService {
 
   async shutdown(): Promise<void> {
     await this.sessions.stopAll();
+    this.db.close();
+  }
+
+  /** Update hand-off: screens are saved and session records stay "running" (see recoverOrphans). */
+  async handoff(): Promise<void> {
+    await this.sessions.saveSnapshots(true);
+    this.sessions.stopSnapshots();
     this.db.close();
   }
 }

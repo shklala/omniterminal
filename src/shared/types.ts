@@ -122,6 +122,63 @@ export interface AppSettings {
   restoreAfterRestart: boolean;
   /** PowerShell: suggestions from history (and plugins) while typing, shown as a list. */
   suggestions: boolean;
+  /** Notify when a command that ran at least this many seconds finishes in a background tab (0 = off). */
+  notifyAfterSeconds: number;
+  /** Closing the window keeps OmniTerminal in the notification area (tray). */
+  minimizeToTray: boolean;
+  /** System-wide shortcut that shows/hides the window, e.g. "Ctrl+Alt+T" ('' = off). */
+  globalHotkey: string;
+  /** With the global shortcut: show the window as a drop-down panel at the top of the screen. */
+  dropDown: boolean;
+  /** Check GitHub Releases for new versions and download them in the background. */
+  autoUpdate: boolean;
+  /** Custom keyboard shortcuts: action id -> key combination ("Ctrl+Shift+P"); '' disables. */
+  keybindings: Record<string, string>;
+}
+
+/** Which account a tool in a terminal is signed in to (read from that terminal's config files). */
+export interface AccountInfo {
+  toolId: string;
+  toolName: string;
+  /** e.g. "you@example.com (Acme)"; null when not signed in or unknown. */
+  account: string | null;
+  /** Labels of per-terminal token fields that have a value. Values are never sent. */
+  tokens: string[];
+  /** The tool's own "who am I" command, if it has one. */
+  whoami: string | null;
+}
+
+/** A saved command, run from the command palette. */
+export interface Snippet {
+  id: string;
+  name: string;
+  command: string;
+  /** Only offered in this terminal (base profile id); null = every terminal. */
+  profileId: string | null;
+  /** Press Enter after typing the command. */
+  run: boolean;
+}
+
+/** One tab of a workspace: its terminals, side by side. */
+export interface WorkspaceTab {
+  /** Each pane: a terminal id, plus whether it is an extra shell ("Open another"). */
+  panes: { profileId: string; another: boolean }[];
+  direction: 'row' | 'column';
+}
+
+/** A named set of tabs (and split panes) opened together. */
+export interface Workspace {
+  id: string;
+  name: string;
+  tabs: WorkspaceTab[];
+}
+
+export interface SshKeyStatus {
+  /** The per-terminal SSH tool is switched on for this terminal. */
+  enabled: boolean;
+  hasKey: boolean;
+  publicKey: string | null;
+  keyFile: string;
 }
 
 export type IsolationLevel = 'full' | 'partial' | 'shared';
@@ -192,6 +249,8 @@ export interface AppState {
   limitations: ToolDefinition[];
   settings: AppSettings;
   customThemes: CustomTheme[];
+  snippets: Snippet[];
+  workspaces: Workspace[];
 }
 
 export interface ExportedProfile {
