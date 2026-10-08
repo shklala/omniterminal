@@ -197,7 +197,9 @@ export class SessionManager {
     const cols = size?.cols ?? profile.lastCols;
     const rows = size?.rows ?? profile.lastRows;
     const cwd = this.resolveCwd(profile);
-    const spec = buildLaunchSpec(profile, this.shells, path.join(profile.dir, 'history'), { suggestions: this.suggestionsEnabled() });
+    // Reopening after a restart or update can run a different command, e.g. "claude --continue".
+    const launchProfile = restore && profile.restoreCommand.trim() ? { ...profile, startupCommand: profile.restoreCommand } : profile;
+    const spec = buildLaunchSpec(launchProfile, this.shells, path.join(profile.dir, 'history'), { suggestions: this.suggestionsEnabled() });
     let launchFile = spec.file;
     let launchArgs = spec.args;
     if (elevated) {

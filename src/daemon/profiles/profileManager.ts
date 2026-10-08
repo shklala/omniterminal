@@ -98,6 +98,7 @@ export class ProfileManager {
       shellPath: d.shellPath ?? '',
       shellArgs: Array.isArray(d.shellArgs) ? d.shellArgs : [],
       startupCommand: d.startupCommand ?? '',
+      restoreCommand: d.restoreCommand ?? '',
       env: d.env ?? [],
       tools: d.tools ?? {},
       customMappings: d.customMappings ?? [],
@@ -226,6 +227,7 @@ export class ProfileManager {
       cwd: String(input.cwd ?? ''),
       ...this.sanitizeShell(input, defaults),
       startupCommand: String(input.startupCommand ?? ''),
+      restoreCommand: String(input.restoreCommand ?? ''),
       env: envList.map((v) => (v.secret ? { name: v.name, value: '', secret: true } : v)),
       tools: this.sanitizeTools(input.tools),
       customMappings: this.sanitizeMappings(input.customMappings ?? [], dir),
@@ -290,6 +292,7 @@ export class ProfileManager {
       Object.assign(data, this.sanitizeShell(patch, data));
     }
     if (patch.startupCommand !== undefined) data.startupCommand = String(patch.startupCommand);
+    if (patch.restoreCommand !== undefined) data.restoreCommand = String(patch.restoreCommand);
     if (patch.tools !== undefined) data.tools = this.sanitizeTools(patch.tools);
     if (patch.customMappings !== undefined) data.customMappings = this.sanitizeMappings(patch.customMappings, current.dir);
     if (patch.appearance !== undefined) data.appearance = this.sanitizeAppearance(patch.appearance, data.appearance);
@@ -388,6 +391,7 @@ export class ProfileManager {
       shellPath: p.shellPath,
       shellArgs: p.shellArgs,
       startupCommand: p.startupCommand,
+      restoreCommand: p.restoreCommand,
       env: p.env.map((v) => ({ name: v.name, value: v.secret ? null : v.value, secret: v.secret })),
       tools: { ...p.tools },
       customMappings: p.customMappings.map((m) => ({ ...m })),

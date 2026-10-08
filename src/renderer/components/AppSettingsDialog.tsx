@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { AppState, Snippet } from '../../shared/types';
+import type { AppState, InstalledTool, Snippet } from '../../shared/types';
 import { api, bridge, errorMessage, type AppInfo, type UpdateStatus } from '../api';
 import { LANGUAGES, t } from '../i18n';
 import { SHORTCUT_ACTIONS, comboFromEvent, conflicts, effectiveBindings, shadowsTerminalKey } from '../keybindings';
@@ -7,12 +7,14 @@ import { cx } from '../util';
 import { Dialog } from './Dialog';
 import { Icon } from './Icon';
 
-type Tab = 'general' | 'window' | 'shortcuts' | 'snippets' | 'updates';
+export type SettingsTab = 'general' | 'window' | 'shortcuts' | 'snippets' | 'tools' | 'updates';
+type Tab = SettingsTab;
 const TABS: { id: Tab; label: string }[] = [
   { id: 'general', label: 'General' },
   { id: 'window', label: 'Window and startup' },
   { id: 'shortcuts', label: 'Keyboard shortcuts' },
   { id: 'snippets', label: 'Snippets' },
+  { id: 'tools', label: 'CLI tools' },
   { id: 'updates', label: 'Updates and data' },
 ];
 
@@ -97,6 +99,7 @@ export function AppSettingsDialog({
           {tab === 'window' && <WindowTab settings={settings} set={set} />}
           {tab === 'shortcuts' && <ShortcutsTab custom={settings.keybindings} onChange={(keybindings) => set({ keybindings })} />}
           {tab === 'snippets' && <SnippetsTab state={state} toast={toast} />}
+          {tab === 'tools' && <InstalledToolsTab />}
           {tab === 'updates' && <UpdatesTab settings={settings} set={set} info={info} onExitCompletely={onExitCompletely} />}
         </div>
       </div>
@@ -413,6 +416,82 @@ function SnippetsTab({ state, toast }: { state: AppState; toast: (m: string) => 
         </button>
       </div>
       {error && <div className="form-error">{error}</div>}
+    </div>
+  );
+}
+
+const TOOL_GROUP_LABEL: Record<InstalledTool['group'], string> = {
+  ai: 'AI coding tools',
+  code: 'Git and code hosting',
+  cloud: 'Cloud and infrastructure',
+  deploy: 'Hosting and deploys',
+  services: 'Developer services',
+  runtimes: 'Languages and shells',
+  data: 'Data and ML',
+};
+
+/** Which CLIs are installed (on PATH, as a new terminal sees it) and their versions. */
+function InstalledToolsTab() {
+  const [list, setList] = useState<InstalledTool[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const load = async (force: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      setList(await bridge.invoke<InstalledTool[]>('system.tools', { force }));
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  useEffect(() => {
+    void load(false);
+  }, []);
+  const installed = list?.filter((x) => x.path).length ?? 0;
+  return (
+    <div className="form-grid">
+      <p className="hint">{t('Command-line tools found on this PC, as a new terminal sees them. Each terminal keeps its own logins for them.')}</p>
+      <div className="row-actions">
+        <button className="btn" disabled={busy} onClick={() => void load(true)}>
+          <Icon name="restart" size={14} /> {busy ? t('Checking…') : t('Check again')}
+        </button>
+        {list && <span className="muted small">{t('{n} of {total} installed', { n: installed, total: list.length })}</span>}
+      </div>
+      {error && <div className="form-error">{error}</div>}
+      {!list && busy && <p className="hint">{t('Looking for installed tools… (some take a few seconds to report their version)')}</p>}
+      {list &&
+        (Object.keys(TOOL_GROUP_LABEL) as InstalledTool['group'][]).map((g) => {
+          const items = list.filter((x) => x.group === g);
+          if (items.length === 0) return null;
+          return (
+            <div key={g}>
+              <h4 className="tool-group">{t(TOOL_GROUP_LABEL[g])}</h4>
+              <div className="installed-list">
+                {items.map((x) => (
+                  <div key={x.id} className={cx('installed-row', !x.path && 'missing')}>
+                    <span className={cx('installed-dot', x.path ? 'ok' : 'none')} />
+                    <span className="installed-name">{x.name}</span>
+                    {x.path ? (
+                      <>
+                        <code className="installed-version">{x.version ?? '?'}</code>
+                        <span className="installed-path mono" title={x.path}>{x.path}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="installed-version muted">{t('Not installed')}</span>
+                        <button className="btn btn-sm btn-ghost" onClick={() => void bridge.openExternal(x.url)}>
+                          <Icon name="download" size={13} /> {t('How to install')}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
     </div>
   );
 }

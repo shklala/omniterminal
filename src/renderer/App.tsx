@@ -3,7 +3,7 @@ import type { AppState, Profile, SessionInfo, Workspace } from '../shared/types'
 import type { ResourceStats } from './util';
 import { api, bridge, errorMessage, type DaemonStatus, type ElevationStatus, type UpdateStatus } from './api';
 import { AccountsDialog } from './components/AccountsDialog';
-import { AppSettingsDialog } from './components/AppSettingsDialog';
+import { AppSettingsDialog, type SettingsTab } from './components/AppSettingsDialog';
 import { ContextMenu, Sidebar, TabBar, TopBar, type MenuItem } from './components/Chrome';
 import { Dashboard } from './components/Dashboard';
 import { FindBar } from './components/FindBar';
@@ -24,7 +24,7 @@ type DialogState =
   | { kind: 'settings'; id: string; tab?: 'general' | 'environment' | 'tools' | 'appearance' | 'advanced' }
   | { kind: 'rename'; id: string }
   | { kind: 'delete'; id: string }
-  | { kind: 'app-settings'; tab?: 'general' | 'window' | 'shortcuts' | 'snippets' | 'updates' }
+  | { kind: 'app-settings'; tab?: SettingsTab }
   | { kind: 'exit' }
   | { kind: 'stop-all' }
   | { kind: 'enable-sudo'; id: string; then: 'continue' | 'restart' }
@@ -596,6 +596,13 @@ export function App() {
       openTerminal(info.key, false);
     });
 
+  const copyLastLink = () => {
+    const url = hosts.get(currentRef.current)?.lastLink();
+    if (!url) return toast(t('No link found in this terminal.'));
+    void bridge.clipboardWrite(url);
+    toast(t('Copied {url}', { url: url.length > 60 ? `${url.slice(0, 57)}…` : url }));
+  };
+
   // ----- snippets -----
   const runSnippet = (command: string, enter: boolean) => {
     const key = currentRef.current;
@@ -923,6 +930,7 @@ export function App() {
     { id: 'a:export', label: t('Export All Terminal Configuration…'), icon: 'download', group: 'Actions', run: () => void run(() => bridge.exportProfiles()) },
     { id: 'a:appsettings', label: t('OmniTerminal Settings'), hint: bindings.get('app.settings'), icon: 'settings', group: 'Actions', run: () => setDialog({ kind: 'app-settings' }) },
     { id: 'a:shortcuts', label: t('Keyboard shortcuts…'), icon: 'settings', group: 'Actions', run: () => setDialog({ kind: 'app-settings', tab: 'shortcuts' }) },
+    { id: 'a:clitools', label: t('Check installed CLI tools'), icon: 'code', group: 'Actions', run: () => setDialog({ kind: 'app-settings', tab: 'tools' }) },
     { id: 'a:updates', label: t('Check for updates'), icon: 'download', group: 'Actions', run: () => setDialog({ kind: 'app-settings', tab: 'updates' }) },
     { id: 'a:theme-dark', label: t('Theme: Dark'), icon: 'settings', group: 'Actions', run: () => setAppSetting({ uiTheme: 'dark' }) },
     { id: 'a:theme-light', label: t('Theme: Light'), icon: 'settings', group: 'Actions', run: () => setAppSetting({ uiTheme: 'light' }) },
@@ -948,6 +956,8 @@ export function App() {
             ]
           : []),
         'sep',
+        ...(activeSession?.state === 'running' ? [{ label: t('Reconnect'), icon: 'link', onClick: () => void reconnect(currentKey) }] : []),
+        { label: t('Copy last link'), icon: 'link', onClick: () => copyLastLink() },
         { label: t('Run a snippet…'), icon: 'snippet', onClick: () => setPalette('snippets') },
         { label: t('Open another'), icon: 'plus', onClick: () => void openAnother(currentKey) },
         { label: t('Find in output'), icon: 'search', onClick: () => setFindOpen(true) },

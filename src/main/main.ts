@@ -147,7 +147,7 @@ const handle = (channel: string, fn: (e: IpcMainInvokeEvent, ...args: any[]) => 
 
 const ALLOWED_PREFIXES = [
   'app.', 'profiles.', 'sessions.', 'settings.', 'uiPrefs.', 'shells.', 'themes.', 'snippets.', 'workspaces.', 'ssh.',
-  'system.elevation', 'system.suggestions', 'system.installSuggestions', 'ping',
+  'system.elevation', 'system.suggestions', 'system.installSuggestions', 'system.tools', 'ping',
 ];
 const THEME_IMAGE_RE = /^[a-z0-9-]{8,64}\.(png|jpe?g|webp|gif)$/i;
 const IMAGE_MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };

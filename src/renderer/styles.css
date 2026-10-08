@@ -184,7 +184,7 @@ code { font-family: var(--font-mono); font-size: 12px; }
 .tab-new:hover { background: var(--panel); color: var(--text); }
 
 /* ---------- top bar ---------- */
-.topbar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; padding: 6px 12px 6px 16px; border-bottom: 1px solid var(--line); }
+.topbar { container-type: inline-size; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; padding: 6px 12px 6px 16px; border-bottom: 1px solid var(--line); }
 .topbar-info { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .topbar-color { flex: none; width: 10px; height: 10px; border-radius: 2px; }
 .topbar-text { min-width: 0; }
@@ -193,6 +193,9 @@ code { font-family: var(--font-mono); font-size: 12px; }
 .topbar-meta { display: flex; align-items: center; gap: 14px; color: var(--text-3); font-size: 12px; min-width: 0; white-space: nowrap; overflow: hidden; }
 .topbar-meta .mono { overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; }
 .topbar-actions { display: flex; gap: 4px; flex: none; }
+/* Narrow windows: icon-only buttons (the title attribute still names them). */
+@container (max-width: 860px) { .topbar-actions .btn-label { display: none; } .topbar-actions .btn-sm { padding-inline: 7px; } }
+@container (max-width: 560px) { .topbar-meta { display: none; } }
 .program-title { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: 12px; }
 .admin-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--warn); }
 
@@ -605,3 +608,15 @@ body.resizing-column, body.resizing-column * { cursor: row-resize !important; us
 .ssh-panel { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
 .ssh-pub { display: flex; gap: 8px; align-items: flex-start; }
 .ssh-pub code { flex: 1; min-width: 0; font-size: 11.5px; word-break: break-all; color: var(--text-2); }
+
+/* ---------- installed CLI tools ---------- */
+.installed-list { display: flex; flex-direction: column; margin-bottom: 8px; }
+.installed-row { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 3px 0; border-bottom: 1px solid var(--line); }
+.installed-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.installed-dot.ok { background: var(--ok); }
+.installed-dot.none { border: 1px solid var(--text-3); }
+.installed-name { width: 170px; flex: none; }
+.installed-row.missing .installed-name { color: var(--text-3); }
+.installed-version { flex: none; min-width: 90px; font-size: 12px; }
+.installed-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: 11.5px; direction: rtl; text-align: left; }
+[dir='rtl'] .installed-path { direction: ltr; text-align: right; }

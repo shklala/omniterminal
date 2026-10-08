@@ -206,6 +206,30 @@ describe('OmniTerminal 1.3 features in the window', () => {
     await waitFor(async () => (await c.call<AppState>('app.getState')).profiles.find((p) => p.id === B.id)?.tools['ssh-key'] === true, 5000);
   });
 
+  it('keeps the top bar short, copies the last link and lists installed CLI tools', async () => {
+    await page.locator('.tab').first().click();
+    await page.locator('.pane-group.active .pane.focused .xterm').first().click();
+    // "New" moved to the sidebar; Reconnect lives in the More menu.
+    expect(await page.locator('.topbar-actions').getByRole('button', { name: 'New', exact: true }).count()).toBe(0);
+    const saved = await page.evaluate(() => window.omni.clipboardRead());
+    try {
+      await typeLine('echo see https://example.com/omni-link-test?x=1.');
+      await sleep(800);
+      await page.getByRole('button', { name: 'More actions' }).click();
+      await page.getByRole('button', { name: 'Reconnect' }).waitFor();
+      await page.getByRole('button', { name: 'Copy last link' }).click();
+      await waitFor(async () => (await page.evaluate(() => window.omni.clipboardRead())) === 'https://example.com/omni-link-test?x=1', 5000);
+    } finally {
+      await page.evaluate((t) => window.omni.clipboardWrite(t), saved);
+    }
+    await page.keyboard.press('Control+Comma');
+    const dlg = page.getByRole('dialog', { name: 'OmniTerminal Settings' });
+    await dlg.getByRole('button', { name: 'CLI tools', exact: true }).click();
+    await dlg.locator('.installed-row', { hasText: 'Git' }).locator('.installed-dot.ok').first().waitFor({ timeout: 30000 });
+    await shot('cli-tools');
+    await page.keyboard.press('Escape');
+  });
+
   it('offers to turn on suggestions for Windows PowerShell', async () => {
     await page.keyboard.press('Control+Comma');
     const dlg = page.getByRole('dialog', { name: 'OmniTerminal Settings' });

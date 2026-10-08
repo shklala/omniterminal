@@ -1,6 +1,6 @@
 {
   "name": "omniterminal",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Multi-Terminal Manager for Windows: unlimited independent, persistent terminal sessions with isolated CLI identities.",
   "main": "dist/main.js",
   "scripts": {

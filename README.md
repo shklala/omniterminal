@@ -44,8 +44,9 @@ runs, open it again later, and the screen is exactly as you left it, including f
 vim.
 
 **Reopen after a restart.** If Windows restarts, terminals that were running start again automatically, with their
-earlier output shown above. Programs inside them start fresh; Claude Code users can use `claude --continue` as the
-startup command to pick up the last conversation.
+earlier output shown above. Programs inside them start fresh, but each terminal can run a different command when it
+comes back: set *After a restart or update, run instead* to `claude --continue` (the Claude Code template does this) and
+your last Claude conversation picks up where it was.
 
 **More than one shell per terminal.** `Ctrl+Shift+D` (or *Open another*) opens a second shell that shares the same
 accounts and variables, like opening a second window of the same terminal.
@@ -97,6 +98,9 @@ install*, running terminals are saved first and reopen with their output afterwa
 work with any keyboard language.
 
 **The rest.**
+- Links open with a click, even when a program breaks a long link over several lines (like Claude Code's sign-in link).
+  *Copy last link* in the ⋯ menu copies the most recent one.
+- *Settings > CLI tools* shows which command-line tools are installed, their versions, and how to install the rest.
 - Command palette (`Ctrl+Shift+P`), find in output (`Ctrl+Shift+F`) and zoom.
 - Live memory use per terminal, and a dot on a tab when a background terminal needs attention.
 - Drag to reorder, duplicate a terminal without its logins, and import/export settings (secrets are never included).
@@ -265,8 +269,8 @@ git clone https://github.com/shklala/omniterminal.git
 cd omniterminal
 npm install
 npm run dev        # development build with its own data folder
-npm test           # 104 unit and integration tests
-npm run test:e2e   # 11 tests that drive the real app window
+npm test           # 107 unit and integration tests
+npm run test:e2e   # 12 tests that drive the real app window
 npm run dist       # installer and portable zip in .\release
 ```
 

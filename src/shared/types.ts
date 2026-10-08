@@ -63,6 +63,8 @@ export interface Profile {
   shellPath: string;
   shellArgs: string[];
   startupCommand: string;
+  /** Run instead of the startup command when the terminal reopens after a restart or update (e.g. "claude --continue"). */
+  restoreCommand: string;
   env: EnvVar[];
   /** Tool isolation toggles keyed by tool id (missing => default enabled). */
   tools: Record<string, boolean>;
@@ -173,6 +175,19 @@ export interface Workspace {
   tabs: WorkspaceTab[];
 }
 
+/** A command-line tool found (or not) on PATH, for Settings > CLI tools. */
+export interface InstalledTool {
+  id: string;
+  name: string;
+  group: 'ai' | 'code' | 'cloud' | 'deploy' | 'services' | 'runtimes' | 'data';
+  command: string;
+  /** Full path when installed, else null. */
+  path: string | null;
+  version: string | null;
+  /** Where to get it. */
+  url: string;
+}
+
 export interface SshKeyStatus {
   /** The per-terminal SSH tool is switched on for this terminal. */
   enabled: boolean;
@@ -263,6 +278,8 @@ export interface ExportedProfile {
   shellPath: string;
   shellArgs: string[];
   startupCommand: string;
+  /** Missing in exports from before 1.3.1. */
+  restoreCommand?: string;
   env: { name: string; value: string | null; secret: boolean }[];
   tools: Record<string, boolean>;
   customMappings: CustomMapping[];

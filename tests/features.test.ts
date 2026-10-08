@@ -171,7 +171,7 @@ describe('Restore and update hand-off', () => {
   it('hands running terminals to the next session manager with their screens', async () => {
     const home = tempHome();
     const first = await makeService(home);
-    const p = await first.service.profiles.create({ name: 'Handoff', shellId: 'cmd' });
+    const p = await first.service.profiles.create({ name: 'Handoff', shellId: 'cmd', startupCommand: 'echo FIRST_START', restoreCommand: 'echo RESUMED_%OMNITERMINAL_PROFILE%' });
     const info = await first.service.sessions.start(p.id);
     first.service.sessions.write(p.id, 'echo BEFORE_UPDATE_%OMNITERMINAL_PROFILE%\r');
     await waitFor(async () => (await first.service.sessions.textContent(p.id)).includes('BEFORE_UPDATE_Handoff'), 15000);
@@ -184,7 +184,7 @@ describe('Restore and update hand-off', () => {
     ctx = await makeService(home); // the "new version": restores in init()
     await waitFor(async () => {
       const t = await ctx!.service.sessions.textContent(p.id).catch(() => '');
-      return t.includes('BEFORE_UPDATE_Handoff') && t.includes('Restored after restart');
+      return t.includes('BEFORE_UPDATE_Handoff') && t.includes('Restored after restart') && t.includes('RESUMED_Handoff');
     }, 20000);
     expect(ctx.service.sessions.get(p.id)?.sessionId).not.toBe(info.sessionId);
     // The old process was cleaned up by PID + start time.

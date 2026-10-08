@@ -1,6 +1,5 @@
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { SearchAddon } from '@xterm/addon-search';
@@ -8,6 +7,7 @@ import type { Appearance } from '../../shared/types';
 import { api, bridge, errorMessage } from '../api';
 import { findCustomTheme, getTheme } from '../themes';
 import { cleanTitle, looksLikeAdminNeeded } from '../util';
+import { createLinkProvider, lastLink } from './links';
 
 export type HostState = 'connecting' | 'attached' | 'exited' | 'error' | 'detached';
 /** Unseen activity in a background tab: new output, or the program rang the bell (wants attention). */
@@ -38,6 +38,7 @@ export class TerminalHost {
   /** Title set by the running program (OSC 0/2), e.g. "claude" or "vim notes.txt". */
   title = '';
   private visible = false;
+  private windowWasFocused = true;
   private baseFontSize: number;
   private parentEl: HTMLElement | null = null;
   private appearance: Appearance;
@@ -87,11 +88,9 @@ export class TerminalHost {
     this.term.loadAddon(this.search);
     this.term.loadAddon(new Unicode11Addon());
     this.term.unicode.activeVersion = '11';
-    this.term.loadAddon(
-      new WebLinksAddon((event, uri) => {
-        if (event.ctrlKey || event.metaKey) void bridge.openExternal(uri);
-      }),
-    );
+    // Links open with a plain click, except the click that only brings the window to the front.
+    this.term.registerLinkProvider(createLinkProvider(this.term, (url) => void bridge.openExternal(url), () => this.windowWasFocused));
+    this.el.addEventListener('mousedown', () => (this.windowWasFocused = document.hasFocus()), true);
 
     this.term.onBell(() => this.markActivity('bell'));
     this.term.onTitleChange((t) => {
@@ -194,6 +193,11 @@ export class TerminalHost {
     this.pendingCommand = null;
     const took = this.lastOutputAt - cmd.at;
     if (TerminalHost.notifyAfterMs > 0 && took >= TerminalHost.notifyAfterMs) this.onCommandDone(took);
+  }
+
+  /** The most recent web link printed in this terminal, if any. */
+  lastLink(): string | null {
+    return lastLink(this.term);
   }
 
   copySelection(): void {

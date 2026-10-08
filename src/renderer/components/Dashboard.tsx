@@ -8,7 +8,7 @@ import { t } from '../i18n';
 type SortKey = 'name' | 'status' | 'lastUsed' | 'created' | 'manual';
 
 const QUICK = [
-  { title: 'Claude Code', desc: 'Starts claude in its own account', name: 'Claude', shellId: 'powershell', cmd: 'claude', icon: 'bot', color: '#a855f7' },
+  { title: 'Claude Code', desc: 'Starts claude in its own account', name: 'Claude', shellId: 'powershell', cmd: 'claude', restore: 'claude --continue', icon: 'bot', color: '#a855f7' },
   { title: 'PowerShell', desc: 'Windows PowerShell 5.1', name: 'PowerShell', shellId: 'powershell', cmd: '', icon: 'terminal', color: '#4f8cff' },
   { title: 'PowerShell 7', desc: 'pwsh', name: 'PowerShell 7', shellId: 'pwsh', cmd: '', icon: 'terminal', color: '#06b6d4' },
   { title: 'Git Bash', desc: 'Bash with Git tools', name: 'Git Bash', shellId: 'gitbash', cmd: '', icon: 'code', color: '#f97316' },
@@ -69,7 +69,7 @@ export function Dashboard({
   onSaveWorkspace: () => void;
   onDeleteWorkspace: (w: Workspace) => void;
   bindings: Map<string, string>;
-  onQuickNew: (preset: { name: string; shellId: string; startupCommand: string }) => void;
+  onQuickNew: (preset: { name: string; shellId: string; startupCommand: string; restoreCommand?: string }) => void;
   adminLabel: string;
   profiles: Profile[];
   sessions: Map<string, SessionInfo>;
@@ -250,7 +250,7 @@ export function Dashboard({
         <h3>{t('New terminal from a template')}</h3>
         <div className="quick-grid">
           {QUICK.filter((q) => !q.shellId || shells.some((s) => s.id === q.shellId)).map((q) => (
-            <button key={q.title} className="quick-tile" onClick={() => onQuickNew({ name: q.name, shellId: q.shellId, startupCommand: q.cmd })}>
+            <button key={q.title} className="quick-tile" onClick={() => onQuickNew({ name: q.name, shellId: q.shellId, startupCommand: q.cmd, restoreCommand: 'restore' in q ? q.restore : '' })}>
               <span className="quick-icon" style={{ background: q.color }}><Icon name={q.icon} size={16} /></span>
               <span className="quick-text">
                 <b>{q.title}</b>

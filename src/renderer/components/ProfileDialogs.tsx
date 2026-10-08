@@ -19,6 +19,7 @@ interface GeneralValues {
   shellId: string;
   shellPath: string;
   startupCommand: string;
+  restoreCommand: string;
   color: string;
 }
 
@@ -73,6 +74,18 @@ function GeneralFields({ values, onChange, state, autoFocus }: { values: General
           ))}
         </div>
       </label>
+      <label className="field">
+        <span>{tr('After a restart or update, run instead')} <em>{tr('optional')}</em></span>
+        <input value={values.restoreCommand} onChange={(e) => onChange({ restoreCommand: e.target.value })} placeholder="e.g. claude --continue" spellCheck={false} />
+        <em className="field-help">
+          {tr('When Windows restarts or OmniTerminal updates, this terminal reopens with its earlier output and runs this instead of the startup command. With Claude Code, claude --continue picks up the last conversation.')}
+        </em>
+        {/^claude\b/.test(values.startupCommand.trim()) && values.restoreCommand !== 'claude --continue' && (
+          <div className="presets">
+            <button type="button" className="preset" onClick={() => onChange({ restoreCommand: 'claude --continue' })}>claude --continue</button>
+          </div>
+        )}
+      </label>
       <div className="field">
         <span>{tr('Color')}</span>
         <div className="swatches">
@@ -89,6 +102,7 @@ export interface NewTerminalPreset {
   name?: string;
   shellId?: string;
   startupCommand?: string;
+  restoreCommand?: string;
 }
 
 export function NewTerminalDialog({
@@ -110,6 +124,7 @@ export function NewTerminalDialog({
     shellId: preset?.shellId && state.shells.some((s) => s.id === preset.shellId) ? preset.shellId : defaultShell,
     shellPath: '',
     startupCommand: preset?.startupCommand ?? '',
+    restoreCommand: preset?.restoreCommand ?? '',
     color: PROFILE_COLORS[state.profiles.length % PROFILE_COLORS.length],
   });
   const [env, setEnv] = useState<EnvRow[]>([]);
@@ -195,6 +210,7 @@ export function ProfileSettingsDialog({
     shellId: profile.shellId,
     shellPath: profile.shellPath,
     startupCommand: profile.startupCommand,
+    restoreCommand: profile.restoreCommand,
     color: profile.color,
   });
   const [env, setEnv] = useState<EnvRow[]>(() => toRows(profile.env));

@@ -341,25 +341,23 @@ export function TopBar({
         </div>
       </div>
       <div className="topbar-actions">
-        <button className="btn btn-sm" onClick={onNew} title={t('New Terminal')}><Icon name="plus" size={14} /> {t('New')}</button>
-        {running ? (
-          <button className="btn btn-sm" onClick={onReconnect} title={t('Re-attach to the running session')}><Icon name="link" size={14} /> {t('Reconnect')}</button>
-        ) : (
-          <button className="btn btn-sm" onClick={onStart} title={t('Start session')}><Icon name="play" size={14} /> {t('Start')}</button>
+        {/* Labels collapse to icons when the window is narrow (see .topbar container query). */}
+        {!running && (
+          <button className="btn btn-sm btn-primary" onClick={onStart} title={t('Start session')}><Icon name="play" size={14} /> <span className="btn-label">{t('Start')}</span></button>
         )}
         {admin === 'available' && (
           <button className="btn btn-sm btn-admin" onClick={onRunAsAdmin} title={t('Restart this terminal with administrator rights (Windows asks for permission once)')}>
-            <Icon name="shield" size={14} /> {t('Run as Administrator')}
+            <Icon name="shield" size={14} /> <span className="btn-label">{t('Run as Administrator')}</span>
           </button>
         )}
         {admin === 'session' && (
           <button className="btn btn-sm" onClick={onRestartNormal} title={t('Restart this terminal with your normal rights')}>
-            <Icon name="restart" size={14} /> {t('Restart normally')}
+            <Icon name="restart" size={14} /> <span className="btn-label">{t('Restart normally')}</span>
           </button>
         )}
-        <button className="btn btn-sm" onClick={onRestart} title={t('Restart the shell')}><Icon name="restart" size={14} /> {t('Restart')}</button>
-        <button className="btn btn-sm btn-danger-ghost" onClick={onStop} disabled={!running} title={t('Stop the shell and its processes')}><Icon name="stop" size={14} /> {t('Stop')}</button>
-        <button className="btn btn-sm" onClick={onSettings} title={t('Terminal settings')}><Icon name="settings" size={14} /> {t('Settings')}</button>
+        <button className="btn btn-sm" onClick={onRestart} title={t('Restart the shell')}><Icon name="restart" size={14} /> <span className="btn-label">{t('Restart')}</span></button>
+        <button className="btn btn-sm btn-danger-ghost" onClick={onStop} disabled={!running} title={t('Stop the shell and its processes')}><Icon name="stop" size={14} /> <span className="btn-label">{t('Stop')}</span></button>
+        <button className="btn btn-sm" onClick={onSettings} title={t('Terminal settings')}><Icon name="settings" size={14} /> <span className="btn-label">{t('Settings')}</span></button>
         <button
           className="icon-btn"
           title={t('More: accounts, split, snippets…')}

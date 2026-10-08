@@ -13,6 +13,9 @@ import {
   validateProfileName,
 } from '../src/shared/validation';
 import { powershellBootstrap } from '../src/daemon/pty/shells';
+import { Terminal as HeadlessTerminal } from '@xterm/headless';
+import { createLinkProvider, lastLink } from '../src/renderer/terminal/links';
+import { parseVersion } from '../src/daemon/windows/toolCheck';
 
 describe('profile name validation', () => {
   it('accepts and normalizes normal names', () => {
@@ -223,5 +226,44 @@ describe('PowerShell suggestions setting', () => {
     expect(on).toContain('-PredictionViewStyle ListView');
     expect(on).toContain("-ge [version]'2.1.0'");
     expect(off).not.toContain('Prediction');
+  });
+});
+
+describe('Links in terminal output', () => {
+  const write = (term: InstanceType<typeof HeadlessTerminal>, s: string) => new Promise<void>((r) => term.write(s, () => r()));
+
+  it('joins a URL that a program broke over full-width lines (Claude sign-in link)', async () => {
+    const term = new HeadlessTerminal({ cols: 40, rows: 20, allowProposedApi: true });
+    const url = 'https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c250a&redirect_uri=https%3A%2F%2Fplatform.claude.com&state=xyz';
+    // Hard line breaks exactly at the terminal width, like Ink-based TUIs print.
+    let text = ' Sign in:\r\n';
+    for (let i = 0; i < url.length; i += 40) text += url.slice(i, i + 40) + (i + 40 < url.length ? '\r\n' : '');
+    await write(term, text + '\r\n\r\nPaste code here > ');
+    expect(lastLink(term as unknown as Parameters<typeof lastLink>[0])).toBe(url);
+    const provider = createLinkProvider(term as unknown as Parameters<typeof createLinkProvider>[0], () => undefined, () => true);
+    const links = await new Promise<{ text: string; range: { start: { y: number }; end: { y: number } } }[] | undefined>((r) => provider.provideLinks(3, r as never));
+    expect(links?.[0].text).toBe(url);
+    expect(links?.[0].range.start.y).toBe(2);
+    expect(links?.[0].range.end.y).toBe(2 + Math.ceil(url.length / 40) - 1);
+  });
+
+  it('keeps separate lines separate and drops trailing punctuation', async () => {
+    const term = new HeadlessTerminal({ cols: 80, rows: 10, allowProposedApi: true });
+    await write(term, 'See https://example.com/docs. And (https://example.org/a_(b)).\r\nnext line https://second.example\r\n');
+    expect(lastLink(term as unknown as Parameters<typeof lastLink>[0])).toBe('https://second.example');
+    const provider = createLinkProvider(term as unknown as Parameters<typeof createLinkProvider>[0], () => undefined, () => true);
+    const links = await new Promise<{ text: string }[] | undefined>((r) => provider.provideLinks(1, r as never));
+    expect(links?.map((l) => l.text)).toEqual(['https://example.com/docs', 'https://example.org/a_(b)']);
+  });
+});
+
+describe('Installed tools: version parsing', () => {
+  it('reads the version from typical --version output', () => {
+    expect(parseVersion('git version 2.53.0.windows.2\n')).toBe('2.53.0.windows.2');
+    expect(parseVersion('v22.11.0')).toBe('22.11.0');
+    expect(parseVersion('Python 3.12.1')).toBe('3.12.1');
+    expect(parseVersion('WARNING: update available\nClient Version: v1.34.1\nKustomize Version: v5')).toBe('1.34.1');
+    expect(parseVersion('2.1.293 (Claude Code)')).toBe('2.1.293');
+    expect(parseVersion('')).toBeNull();
   });
 });

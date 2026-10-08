@@ -9,6 +9,7 @@ import { redact } from '../shared/redact';
 import { readAccounts } from './profiles/accounts';
 import { createSshKey, sshStatus } from './env/ssh';
 import { PSREADLINE_VERSION, installPsReadLine, isPsReadLineInstalled } from './windows/psreadline';
+import { checkInstalledTools } from './windows/toolCheck';
 import * as crypto from 'node:crypto';
 import * as path from 'node:path';
 import { ValidationError } from '../shared/validation';
@@ -454,6 +455,8 @@ export class OmniService {
         return status;
       }
 
+      case 'system.tools':
+        return checkInstalledTools(p.force === true);
       case 'system.suggestions':
         return { installed: isPsReadLineInstalled(this.modulesDir), version: PSREADLINE_VERSION };
       case 'system.installSuggestions':
