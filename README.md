@@ -223,9 +223,10 @@ background. Before installing, the session manager saves every screen and exits 
 terminals, so the new version's manager reopens them exactly as it does after a Windows restart. The portable zip does
 not update itself.
 
-**Hardening.** The packaged exe has Electron's fuses set: no `NODE_OPTIONS`, no inspector flags, the app loads only from
-its packed archive and checks that archive's integrity, cookies are encrypted and `file://` pages get no extra rights. The
-named pipe only answers after the per-run token is presented, and drops a silent client after five seconds.
+**Hardening.** The packaged exe has Electron's fuses set: the window process ignores `NODE_OPTIONS` and inspector flags,
+loads the app only from its packed archive and checks that archive's integrity, and encrypts cookies. "Run as Node"
+stays on because the session manager is the same exe in Node mode, so like any Node.js install it can still run scripts.
+The named pipe only answers after the per-run token is presented, and drops a silent client after five seconds.
 
 **Data on disk.**
 
