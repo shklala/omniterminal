@@ -1,3 +1,5 @@
+// Must run before node-pty creates terminals: caps its per-terminal worker's memory.
+import './workerLimits';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as pty from 'node-pty';
@@ -18,6 +20,9 @@ export interface PtySessionOptions {
   useConptyDll: boolean;
   typeOnReady: string | null;
   transcriptFile: string | null;
+  elevated?: boolean;
+  /** Output restored from before a restart, shown above the new session. */
+  preamble?: string;
   knownSecrets: string[];
 }
 
@@ -38,6 +43,7 @@ interface Subscriber {
 export class PtySession {
   readonly sessionId: string;
   readonly profileId: string;
+  readonly elevated: boolean;
   readonly startedAt = Date.now();
   readonly pid: number;
   exitCode: number | null = null;
@@ -54,10 +60,13 @@ export class PtySession {
   private transcript: fs.WriteStream | null = null;
   private readonly knownSecrets: string[];
   private typedStartup = false;
+  /** Output arrived since the last screen snapshot was saved. */
+  dirty = false;
 
   constructor(opts: PtySessionOptions) {
     this.sessionId = opts.sessionId;
     this.profileId = opts.profileId;
+    this.elevated = !!opts.elevated;
     this.cols = opts.cols;
     this.rows = opts.rows;
     this.knownSecrets = opts.knownSecrets;
@@ -71,6 +80,10 @@ export class PtySession {
     this.serializer = new SerializeAddon();
     this.mirror.loadAddon(this.serializer as never);
     this.mirror.onTitleChange((t) => (this.title = t));
+    if (opts.preamble) {
+      // Push the restored output into scrollback so the new shell's first screen does not overwrite it.
+      this.mirror.write(opts.preamble + '\r\n'.repeat(opts.rows));
+    }
 
     this.proc = pty.spawn(opts.file, opts.args, {
       name: 'xterm-256color',
@@ -94,6 +107,7 @@ export class PtySession {
     }
 
     this.proc.onData((data) => {
+      this.dirty = true;
       this.mirror.write(data);
       for (const sub of this.subscribers.values()) {
         if (sub.pending) sub.pending.push(data);
@@ -180,6 +194,20 @@ export class PtySession {
   }
 
   /** Plain-text dump of the buffer (used by tests and diagnostics). */
+  /**
+   * Saves the screen and recent scrollback (with ANSI colours), redacted, so the terminal can show
+   * it again after Windows restarts. Written atomically to the profile's private cache folder.
+   */
+  async saveSnapshot(file: string, maxLines = 1000): Promise<void> {
+    this.dirty = false;
+    await new Promise<void>((r) => this.mirror.write('', r));
+    const text = redact(this.serializer.serialize({ scrollback: maxLines }), this.knownSecrets);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, text);
+    fs.renameSync(tmp, file);
+  }
+
   async textContent(): Promise<string> {
     await new Promise<void>((r) => this.mirror.write('', r));
     const buf = this.mirror.buffer.active;

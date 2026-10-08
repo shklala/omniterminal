@@ -1,6 +1,6 @@
 import type { AdvancedSettings, AppSettings, Appearance } from './types';
 
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.2.0';
 export const PROTOCOL_VERSION = 1;
 
 export const DEFAULT_APPEARANCE: Appearance = {
@@ -26,6 +26,10 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   defaultShellId: 'powershell',
   defaultCwd: '',
   confirmOnExitCompletely: true,
+  uiTheme: 'dark',
+  language: 'en',
+  restoreAfterRestart: true,
+  suggestions: true,
 };
 
 export const PROFILE_COLORS = [

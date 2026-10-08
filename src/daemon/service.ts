@@ -2,7 +2,9 @@ import * as fs from 'node:fs';
 import { APP_VERSION, DEFAULT_APP_SETTINGS } from '../shared/defaults';
 import type { AppPaths } from '../shared/paths';
 import { LIMITATIONS, TOOL_REGISTRY } from '../shared/tools';
-import type { AppSettings, AppState, DaemonInfo, ProfileInput } from '../shared/types';
+import { THEME_COLOR_KEYS, type AppSettings, type AppState, type CustomTheme, type DaemonInfo, type ProfileInput } from '../shared/types';
+import * as crypto from 'node:crypto';
+import * as path from 'node:path';
 import { ValidationError } from '../shared/validation';
 import { SecretStore, dpapiCrypto, type SecretCrypto } from './credentials/secretStore';
 import type { Logger } from './log';
@@ -10,6 +12,8 @@ import { Db } from './persistence/db';
 import { ProfileManager, type ProfileUpdate } from './profiles/profileManager';
 import { detectShells } from './pty/shells';
 import { SessionManager, type SessionEvents } from './sessions/sessionManager';
+import { elevatedShellCommand, getElevationStatus } from './windows/elevation';
+import { baseProfileId } from '../shared/sessionKey';
 
 export interface ServiceOptions {
   paths: AppPaths;
@@ -58,7 +62,10 @@ export class OmniService {
       skipRegistryEnv: this.opts.skipRegistryEnv,
     });
     this.sessions.setShells(await detectShells());
-    await this.sessions.recoverOrphans();
+    await this.sessions.recoverOrphans({ restore: this.getSettings().restoreAfterRestart });
+    this.sessions.snapshotsEnabled = () => this.getSettings().restoreAfterRestart;
+    this.sessions.suggestionsEnabled = () => this.getSettings().suggestions;
+    this.sessions.startSnapshots(Number(process.env.OMNITERMINAL_SNAPSHOT_MS) || 30_000);
     this.db.flush();
   }
 
@@ -89,8 +96,12 @@ export class OmniService {
       if (patch[key] === undefined) continue;
       const expected = typeof DEFAULT_APP_SETTINGS[key];
       if (typeof patch[key] !== expected) throw new ValidationError(`Invalid value for setting ${key}`);
+      if (key === 'uiTheme' && !['system', 'dark', 'light', 'midnight', 'nord'].includes(String(patch[key]))) throw new ValidationError('Invalid theme');
+      if (key === 'language' && !['en', 'ar'].includes(String(patch[key]))) throw new ValidationError('Unsupported language');
       this.db.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, JSON.stringify(patch[key])]);
     }
+    // Turning restore off also removes the saved copies of terminal output.
+    if (patch.restoreAfterRestart === false) this.sessions?.clearAllSnapshots();
     return this.getSettings();
   }
 
@@ -106,6 +117,57 @@ export class OmniService {
     return out;
   }
 
+  // ---------- custom terminal themes ----------
+  getCustomThemes(): CustomTheme[] {
+    const row = this.db.get('SELECT value FROM settings WHERE key = ?', ['customThemes']);
+    try {
+      const list = row ? (JSON.parse(String(row.value)) as CustomTheme[]) : [];
+      return Array.isArray(list) ? list : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private saveCustomThemes(list: CustomTheme[]): void {
+    this.db.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['customThemes', JSON.stringify(list)]);
+  }
+
+  /** Validates and stores a theme from the editor. Returns the saved theme. */
+  saveCustomTheme(input: Partial<CustomTheme>): CustomTheme {
+    const name = String(input.name ?? '').trim().replace(/[\u0000-\u001f]/g, '');
+    if (!name || name.length > 40) throw new ValidationError('Theme name must be 1 to 40 characters.');
+    const colors = {} as CustomTheme['colors'];
+    for (const k of THEME_COLOR_KEYS) {
+      const v = String(input.colors?.[k] ?? '');
+      if (!/^#[0-9a-fA-F]{6}$/.test(v)) throw new ValidationError(`Colour "${k}" must look like #12ab9f.`);
+      colors[k] = v.toLowerCase();
+    }
+    const image = String(input.backgroundImage ?? '');
+    if (image && !/^[a-z0-9-]{8,64}\.(png|jpe?g|webp|gif)$/i.test(image)) throw new ValidationError('Invalid background image.');
+    const opacity = Math.max(0, Math.min(1, Number(input.imageOpacity ?? 0.35)));
+    const fit = input.imageFit === 'contain' || input.imageFit === 'tile' ? input.imageFit : 'cover';
+    const list = this.getCustomThemes();
+    const id = typeof input.id === 'string' && /^custom:[0-9a-f-]{36}$/.test(input.id) ? input.id : `custom:${crypto.randomUUID()}`;
+    const theme: CustomTheme = { id, name, colors, backgroundImage: image, imageOpacity: Number.isFinite(opacity) ? opacity : 0.35, imageFit: fit };
+    const old = list.find((t) => t.id === id);
+    if (old?.backgroundImage && old.backgroundImage !== image) this.removeThemeImage(old.backgroundImage);
+    this.saveCustomThemes([...list.filter((t) => t.id !== id), theme]);
+    return theme;
+  }
+
+  deleteCustomTheme(id: string): void {
+    const list = this.getCustomThemes();
+    const theme = list.find((t) => t.id === id);
+    if (!theme) return;
+    if (theme.backgroundImage) this.removeThemeImage(theme.backgroundImage);
+    this.saveCustomThemes(list.filter((t) => t.id !== id));
+  }
+
+  private removeThemeImage(name: string): void {
+    if (!/^[a-z0-9-]{8,64}\.(png|jpe?g|webp|gif)$/i.test(name)) return;
+    fs.rmSync(path.join(this.opts.paths.home, 'themes', name), { force: true });
+  }
+
   state(): AppState {
     return {
       daemon: this.info(),
@@ -115,6 +177,7 @@ export class OmniService {
       tools: TOOL_REGISTRY,
       limitations: LIMITATIONS,
       settings: this.getSettings(),
+      customThemes: this.getCustomThemes(),
     };
   }
 
@@ -150,7 +213,7 @@ export class OmniService {
       }
       case 'profiles.delete': {
         const id = str(p, 'id');
-        await this.sessions.stop(id);
+        await this.sessions.stopProfile(id);
         this.profiles.delete(id, p.deleteFiles !== false);
         changed('profile.delete');
         return true;
@@ -172,6 +235,8 @@ export class OmniService {
         return created;
       }
 
+      case 'sessions.newInstance':
+        return this.sessions.newInstance(str(p, 'profileId'), size(p));
       case 'sessions.list':
         return this.sessions.list();
       case 'sessions.start': {
@@ -193,15 +258,41 @@ export class OmniService {
         await this.sessions.stop(str(p, 'profileId'));
         return true;
       case 'sessions.restart':
-        return this.sessions.restart(str(p, 'profileId'), size(p));
+        return this.sessions.restart(str(p, 'profileId'), size(p), p.elevated === true);
       case 'sessions.dismiss':
         this.sessions.dismiss(str(p, 'profileId'));
         return true;
+      case 'system.elevation':
+        return getElevationStatus();
+      case 'sessions.elevate': {
+        // Continue this terminal as administrator, in place, via Windows sudo (inline mode).
+        const id = str(p, 'profileId');
+        const profile = this.profiles.get(baseProfileId(id));
+        const shell = this.sessions.getShells().find((s) => s.id === profile.shellId);
+        const status = await getElevationStatus();
+        if (status.managerElevated) throw new ValidationError('This terminal already runs as administrator.');
+        if (status.sudo !== 'inline') throw new ValidationError('Windows sudo is not enabled in inline mode.');
+        const cmd = shell ? elevatedShellCommand(shell.kind, shell.path) : null;
+        if (!cmd) throw new ValidationError('Continue as Administrator is available for PowerShell, Command Prompt and Git Bash terminals.');
+        if (!this.sessions.get(id)?.alive) throw new ValidationError('Terminal is not running.');
+        // Clear any half-typed input first (Esc for PowerShell/cmd, Ctrl+U for bash).
+        this.sessions.write(id, (shell!.kind === 'gitbash' ? '\x15' : '\x1b') + cmd + '\r');
+        return true;
+      }
       case 'sessions.stats':
         return this.sessions.stats();
       case 'sessions.text':
         return this.sessions.textContent(str(p, 'profileId'));
 
+      case 'themes.save': {
+        const theme = this.saveCustomTheme((p.theme ?? {}) as Partial<CustomTheme>);
+        changed('themes');
+        return theme;
+      }
+      case 'themes.delete':
+        this.deleteCustomTheme(str(p, 'id'));
+        changed('themes');
+        return true;
       case 'settings.get':
         return this.getSettings();
       case 'settings.set': {
@@ -218,6 +309,12 @@ export class OmniService {
       case 'client.goodbye':
         this.sessions.detachClient(clientId, true);
         return true;
+      case 'daemon.memory': {
+        // Diagnostics: where the session manager's memory goes.
+        const m = process.memoryUsage();
+        const mb = (n: number) => Math.round((n / 1048576) * 10) / 10;
+        return { rss: mb(m.rss), heapUsed: mb(m.heapUsed), heapTotal: mb(m.heapTotal), external: mb(m.external), arrayBuffers: mb(m.arrayBuffers), sessions: this.sessions.list().length };
+      }
       case 'daemon.shutdown':
         setTimeout(() => this.shutdownHandler?.(), 10);
         return true;

@@ -12,6 +12,7 @@ import {
   validateEnvName,
   validateProfileName,
 } from '../src/shared/validation';
+import { powershellBootstrap } from '../src/daemon/pty/shells';
 
 describe('profile name validation', () => {
   it('accepts and normalizes normal names', () => {
@@ -203,7 +204,7 @@ describe('program title cleanup', () => {
     expect(cleanTitle('claude')).toBe('claude');
     expect(cleanTitle('Client X', 'Client X')).toBe('');
     expect(statsSummary({ memory: 300 * 1024 * 1024, processes: 2, children: ['claude'] }, 'claude')).toBe('300 MB');
-    expect(statsSummary({ memory: 300 * 1024 * 1024, processes: 2, children: ['node'] }, 'claude')).toBe('node · 300 MB');
+    expect(statsSummary({ memory: 300 * 1024 * 1024, processes: 2, children: ['node'] }, 'claude')).toBe('node, 300 MB');
   });
 });
 
@@ -212,5 +213,15 @@ describe('command palette noise filter', () => {
     const { fuzzyScore } = await import('../src/renderer/components/CommandPalette');
     expect(fuzzyScore('cli', 'Exit Completely (stop everything)')).toBeNull();
     expect(fuzzyScore('cli', 'Client X · Supabase')).toBe(0);
+  });
+});
+
+describe('PowerShell suggestions setting', () => {
+  it('adds the list-view prediction setup only when enabled', () => {
+    const on = powershellBootstrap('C:\h.txt', '', 'T', true);
+    const off = powershellBootstrap('C:\h.txt', '', 'T', false);
+    expect(on).toContain('-PredictionViewStyle ListView');
+    expect(on).toContain("-ge [version]'2.1.0'");
+    expect(off).not.toContain('Prediction');
   });
 });

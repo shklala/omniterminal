@@ -92,11 +92,11 @@ function psQuote(s: string): string {
 }
 
 /**
- * PowerShell bootstrap: points PSReadLine at the per-terminal history file and reloads the
- * in-memory history from it (PSReadLine may already have loaded the global history).
+ * PowerShell bootstrap: points PSReadLine at the per-terminal history file (reloading the
+ * in-memory history from it if PSReadLine already loaded the global history).
  * Runs after the user's $PROFILE, so the user's prompt/modules still work.
  */
-export function powershellBootstrap(historyFile: string, startupCommand: string, profileName: string): string {
+export function powershellBootstrap(historyFile: string, startupCommand: string, profileName: string, suggestions = false): string {
   const lines = [
     `$Host.UI.RawUI.WindowTitle = ${psQuote(profileName)}`,
     `try {`,
@@ -104,16 +104,22 @@ export function powershellBootstrap(historyFile: string, startupCommand: string,
     `    Import-Module PSReadLine -ErrorAction SilentlyContinue`,
     `    $__omniHist = ${psQuote(historyFile)}`,
     `    Set-PSReadLineOption -HistorySaveStyle SaveNothing`,
-    `    [Microsoft.PowerShell.PSConsoleReadLine]::ClearHistory()`,
-    `    if (Test-Path -LiteralPath $__omniHist) {`,
-    `      $__omniBuf = ''`,
-    `      foreach ($__l in [IO.File]::ReadAllLines($__omniHist)) {`,
-    `        if ($__l.EndsWith('\`')) { $__omniBuf += $__l.Substring(0, $__l.Length - 1) + "\`n"; continue }`,
-    `        [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($__omniBuf + $__l); $__omniBuf = ''`,
+    // Before the first prompt PSReadLine has not read any history yet and AddToHistory throws;
+    // it then reads HistorySavePath itself at the first prompt. The reload is only needed when
+    // something (e.g. the user's $PROFILE) already started PSReadLine with the global history.
+    `    try {`,
+    `      [Microsoft.PowerShell.PSConsoleReadLine]::ClearHistory()`,
+    `      if (Test-Path -LiteralPath $__omniHist) {`,
+    `        $__omniBuf = ''`,
+    `        foreach ($__l in [IO.File]::ReadAllLines($__omniHist)) {`,
+    `          if ($__l.EndsWith('\`')) { $__omniBuf += $__l.Substring(0, $__l.Length - 1) + "\`n"; continue }`,
+    `          [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($__omniBuf + $__l); $__omniBuf = ''`,
+    `        }`,
     `      }`,
-    `    }`,
+    `    } catch { }`,
     `    Set-PSReadLineOption -HistorySavePath $__omniHist -HistorySaveStyle SaveIncrementally`,
     `    Remove-Variable __omniHist, __omniBuf, __l -ErrorAction SilentlyContinue`,
+    ...(suggestions ? psSuggestionLines() : []),
     `  }`,
     `} catch { }`,
   ];
@@ -121,7 +127,32 @@ export function powershellBootstrap(historyFile: string, startupCommand: string,
   return lines.join('\n');
 }
 
-export function buildLaunchSpec(profile: Profile, shells: ShellInfo[], historyDir: string): LaunchSpec {
+/**
+ * Suggestions while typing (PSReadLine 2.1+): turns predictions on if they are off and shows them
+ * as a list under the prompt (PSReadLine 2.2+). HistoryAndPlugin needs PowerShell 7.2+.
+ * F1 (command help) and Alt+H (parameter help) come with PSReadLine 2.2 as well.
+ * With the setting off, PowerShell's own defaults (or the user's $PROFILE) are left alone.
+ */
+function psSuggestionLines(): string[] {
+  return [
+    `    $__omniV = (Get-Module PSReadLine | Sort-Object Version | Select-Object -Last 1).Version`,
+    `    if ($__omniV -ge [version]'2.1.0') {`,
+    `      if ("$((Get-PSReadLineOption).PredictionSource)" -eq 'None') {`,
+    `        $__omniSrc = 'History'`,
+    `        if ($__omniV -ge [version]'2.2.2' -and $PSVersionTable.PSVersion -ge [version]'7.2') { $__omniSrc = 'HistoryAndPlugin' }`,
+    `        Set-PSReadLineOption -PredictionSource $__omniSrc`,
+    `      }`,
+    `      if ($__omniV -ge [version]'2.2.0') { Set-PSReadLineOption -PredictionViewStyle ListView }`,
+    `    }`,
+    `    Remove-Variable __omniV, __omniSrc -ErrorAction SilentlyContinue`,
+  ];
+}
+
+export interface LaunchOptions {
+  suggestions?: boolean;
+}
+
+export function buildLaunchSpec(profile: Profile, shells: ShellInfo[], historyDir: string, options: LaunchOptions = {}): LaunchSpec {
   const startup = profile.startupCommand.trim();
   if (profile.shellId === 'custom') {
     if (!profile.shellPath) throw new Error('Custom shell path is not set.');
@@ -133,9 +164,20 @@ export function buildLaunchSpec(profile: Profile, shells: ShellInfo[], historyDi
   switch (shell.kind) {
     case 'powershell':
     case 'pwsh': {
-      const script = powershellBootstrap(path.join(historyDir, 'powershell_history.txt'), startup, profile.name);
+      const historyFile = path.join(historyDir, 'powershell_history.txt');
+      const suggestions = options.suggestions ?? false;
+      const script = powershellBootstrap(historyFile, startup, profile.name, suggestions);
       const encoded = Buffer.from(script, 'utf16le').toString('base64');
-      return { file: shell.path, args: ['-NoLogo', '-NoExit', '-EncodedCommand', encoded, ...profile.shellArgs], typeOnReady: null, extraEnv: {} };
+      // Used by "Continue as Administrator": the elevated shell re-applies this terminal's history setup.
+      const elevatedInit =
+        powershellBootstrap(historyFile, '', `${profile.name} (Administrator)`, suggestions) +
+        "\nWrite-Host 'Elevated (Administrator) - same terminal identity. Type exit to return.' -ForegroundColor Yellow";
+      return {
+        file: shell.path,
+        args: ['-NoLogo', '-NoExit', '-EncodedCommand', encoded, ...profile.shellArgs],
+        typeOnReady: null,
+        extraEnv: { OMNITERMINAL_PS_INIT: elevatedInit },
+      };
     }
     case 'cmd': {
       // cmd.exe has its own quoting rules, so build the raw command line ourselves:

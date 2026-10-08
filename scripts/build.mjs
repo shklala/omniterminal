@@ -10,8 +10,8 @@ const common = {
   format: 'cjs',
   sourcemap: true,
   logLevel: 'info',
-  // Native / WASM / heavy runtime deps stay in node_modules (node-pty is asar-unpacked).
-  external: ['electron', 'node-pty', 'sql.js', '@xterm/headless', '@xterm/addon-serialize'],
+  // Only the native PTY module stays external (asar-unpacked); everything else is bundled.
+  external: ['electron', 'node-pty'],
 };
 
 const builds = [

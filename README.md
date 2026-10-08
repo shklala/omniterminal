@@ -1,268 +1,251 @@
 <div align="center">
 
-<img src="build/icon.png" width="96" alt="OmniTerminal logo" />
+<img src="build/icon.png" width="88" alt="" />
 
 # OmniTerminal
 
-**Run unlimited terminals on Windows, each with its own identity, and keep them running after you close the window.**
-
-Separate Claude Code, gcloud, GitHub, Git, Supabase and cloud logins per terminal ·
-real ConPTY terminals · sessions that keep running when the window closes · no sandbox, full access to your machine
+A terminal manager for Windows where every terminal has its own logins, settings and history,
+and keeps running after you close the window.
 
 [![CI](https://github.com/shklala/omniterminal/actions/workflows/ci.yml/badge.svg)](https://github.com/shklala/omniterminal/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/shklala/omniterminal?color=4f8cff)](https://github.com/shklala/omniterminal/releases/latest)
-![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078d4)
-![Electron](https://img.shields.io/badge/Electron-44-47848f)
-[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/shklala/omniterminal?color=555)](https://github.com/shklala/omniterminal/releases/latest)
+![Windows 10 and 11](https://img.shields.io/badge/Windows-10%20%7C%2011-555)
+[![MIT](https://img.shields.io/badge/license-MIT-555)](LICENSE)
 
-[**Download for Windows**](https://github.com/shklala/omniterminal/releases/latest) · [Features](#features) · [How it works](#how-it-works) · [Isolation matrix](#isolation-matrix) · [Build from source](#build-from-source)
+[Download](https://github.com/shklala/omniterminal/releases/latest) ·
+[What it does](#what-it-does) ·
+[Supported tools](#supported-tools) ·
+[How it works](#how-it-works) ·
+[Building](#building-from-source)
 
-<img src="docs/screenshots/hero.png" alt="OmniTerminal running Claude Code next to other isolated terminals" width="100%" />
+<img src="docs/screenshots/hero.png" alt="OmniTerminal with Claude Code running in one of several terminals" width="100%" />
 
 </div>
 
----
+## Why I built it
 
-## Why
+I use several accounts for the same tools: a personal and a work Claude account, different Google Cloud projects,
+more than one GitHub identity. In a normal terminal, logging in to one of them changes it everywhere, because the
+login is stored in one place in your user folder.
 
-If you use more than one account (personal and work Claude, client A's and client B's Google Cloud, two GitHub
-identities), logging in from one terminal usually logs in **every** terminal. Logins are written to one shared place in
-your user folder.
+In OmniTerminal each terminal stores those logins in its own folder. Log in to Claude Code in "Client A" and your
+"Personal" terminal is still logged in as you. The terminals are ordinary Windows shells (PowerShell, Command Prompt,
+Git Bash, WSL) with full access to your files and tools. Nothing is sandboxed.
 
-OmniTerminal makes **one terminal = one independent environment**. Each terminal gets its own:
+## What it does
 
-* config and login folders for Claude Code, gcloud, GitHub CLI, Git, Azure, AWS, kubectl, npm, Codex and more
-* environment variables, with secrets encrypted by Windows DPAPI
-* shell history (PowerShell, Bash, Node and Python REPLs)
-* working directory, shell, startup command and appearance
+**Separate accounts per terminal.** Claude Code, gcloud, GitHub CLI, Git, Azure, kubectl, npm, Codex and more each get
+their own config folder inside the terminal. Tools that keep a single global login (Supabase, Netlify, Fly.io,
+Cloudflare and others) get a per-terminal token field instead. Secret values are encrypted with Windows DPAPI and never
+shown, logged or exported.
 
-Terminals are **not sandboxed**. They run as you, with full access to your drives, repos, Docker, WSL, SSH and every
-installed tool, just like Windows Terminal.
+**Sessions that outlive the window.** A small background process owns the shells. Close OmniTerminal while a long task
+runs, open it again later, and the screen is exactly as you left it, including full-screen programs like `claude` or
+vim.
 
-And because a small background **session manager** owns the terminals, you can **close the window while `claude` is mid-task,
-reopen it later and pick up exactly where you left off**, full-screen apps included.
+**Reopen after a restart.** If Windows restarts, terminals that were running start again automatically, with their
+earlier output shown above. Programs inside them start fresh; Claude Code users can use `claude --continue` as the
+startup command to pick up the last conversation.
 
-## Features
+**More than one shell per terminal.** `Ctrl+Shift+D` (or *Open another*) opens a second shell that shares the same
+accounts and variables, like opening a second window of the same terminal.
 
-<table>
-<tr>
-<td width="50%" valign="top">
+**Administrator when needed.** *Run as Administrator* restarts a terminal with admin rights through Windows' built-in
+`sudo`. If a command fails with "Access is denied", OmniTerminal offers to continue as administrator. Windows always asks
+first.
 
-### Real terminals
-ConPTY pseudoconsoles rendered by xterm.js with WebGL. Colors, Unicode, mouse, resize, scrollback, tab completion
-and full-screen TUIs: `claude`, `vim`, `htop`, `ssh`, `npm`, `python`, `gcloud`, `gh`.
-Not a fake text box that executes commands.
+**Themes.** Dark, Light, Midnight and Nord for the app, or follow the Windows setting. Fourteen terminal colour schemes,
+plus a theme editor for your own: every colour, and an optional background picture.
 
-### Persistent sessions
-Close the GUI and your terminals keep running. Reopen it and it **auto-reconnects** and restores each screen exactly,
-from a server-side terminal mirror. If the GUI crashes, terminals live on. If the session manager crashes, it restarts
-and cleans up leftover processes safely.
+**English and Arabic.** Arabic uses a full right-to-left layout.
 
-### Isolated identities
-Per-terminal config folders via each tool's own env var, a separate Git Credential Manager
-namespace per terminal, and encrypted per-terminal **tokens** for Supabase, GitHub, Netlify, Fly.io and Cloudflare.
-Limitations are listed honestly in the app ([matrix below](#isolation-matrix)).
+**Suggestions while typing.** In PowerShell, matching commands from that terminal's own history appear in a list as
+you type; pick one with the arrow keys, press `F1` for help on a command. Needs PSReadLine 2.1 or later (PowerShell 7
+has it; on Windows PowerShell run `Install-Module PSReadLine -Scope CurrentUser -Force` once). Tab completion works as
+usual in every shell.
 
-</td>
-<td width="50%" valign="top">
-
-### Built for many terminals at once
-No artificial limit. Each terminal's live **memory and running programs** are shown. **Activity dots**
-mark background output, and a **bell** (e.g. Claude finishing) flashes the taskbar and sends a Windows notification.
-
-### Fast to drive
-**Command palette** (`Ctrl+Shift+P`), find in scrollback (`Ctrl+Shift+F`), zoom, drag-to-reorder,
-`Ctrl+Alt+1-9` tab switching, startup presets like `claude` or `npm run dev`, Duplicate, Import / Export.
-
-### Safe by default
-Secrets are DPAPI-encrypted, never shown, never logged, never exported. **Duplicate** copies configuration but never
-logins. The pipe to the session manager is token-authenticated. Paths are checked against traversal.
-
-</td>
-</tr>
-</table>
+**The rest.**
+- Command palette (`Ctrl+Shift+P`), find in output (`Ctrl+Shift+F`) and zoom.
+- Live memory use per terminal, and a dot on a tab when a background terminal needs attention.
+- Drag to reorder, duplicate a terminal without its logins, and import/export settings (secrets are never included).
 
 ## Screenshots
 
-| All terminals with live resource usage | Each terminal's isolated identity |
+| | |
 |---|---|
-| <img src="docs/screenshots/dashboard.png" alt="Dashboard" /> | <img src="docs/screenshots/isolation.png" alt="Per-terminal environment" /> |
-| **New terminal: shell, startup presets, variables** | **Per-terminal tools and tokens (Supabase, GitHub, …)** |
-| <img src="docs/screenshots/new-terminal.png" alt="New terminal dialog" /> | <img src="docs/screenshots/tools.png" alt="Tools and tokens" /> |
-| **Command palette** | **Git Bash in a real repo** |
-| <img src="docs/screenshots/palette.png" alt="Command palette" /> | <img src="docs/screenshots/git-bash.png" alt="Git Bash" /> |
+| <img src="docs/screenshots/dashboard.png" alt="All terminals" /> | <img src="docs/screenshots/custom-theme.png" alt="Custom theme with a background picture" /> |
+| All terminals, with memory use | A custom theme with a background picture |
+| <img src="docs/screenshots/theme-editor.png" alt="Theme editor" /> | <img src="docs/screenshots/tools.png" alt="Per-terminal tools" /> |
+| The theme editor | Per-terminal tools and tokens |
+| <img src="docs/screenshots/admin-prompt.png" alt="Administrator prompt" /> | <img src="docs/screenshots/second-shell.png" alt="Second shell of the same terminal" /> |
+| Offering administrator rights after "Access is denied" | A second shell of the same terminal |
+| <img src="docs/screenshots/light.png" alt="Light theme" /> | <img src="docs/screenshots/arabic.png" alt="Arabic interface" /> |
+| Light theme | Arabic, right to left |
 
 ## Install
 
-Download from **[Releases](https://github.com/shklala/omniterminal/releases/latest)**:
+Get the latest version from [Releases](https://github.com/shklala/omniterminal/releases/latest):
 
-| File | What it is |
+- `OmniTerminal-Setup-<version>.exe` installs for your user only and needs no admin rights.
+- `OmniTerminal-<version>-win-x64.zip` is portable. Unzip it anywhere and run `OmniTerminal.exe`.
+
+The builds are not code-signed yet, so Windows SmartScreen may warn you the first time. Choose **More info**, then
+**Run anyway**.
+
+Requires Windows 10 1809 or later, or Windows 11 (x64). *Run as Administrator* inside a terminal needs Windows 11 24H2
+or later, which includes `sudo`.
+
+## Using it
+
+1. Click **New Terminal**, give it a name, pick a folder and a shell. Templates are available for Claude Code,
+   PowerShell, Git Bash and a dev server.
+2. It opens straight away with its own config folders ready.
+3. Sign in to your tools inside it. Other terminals are not affected.
+4. Close the window whenever you like. The terminals keep running until you stop them or choose
+   **Settings > Exit completely**.
+
+Keyboard shortcuts:
+
+| Keys | Action |
 |---|---|
-| `OmniTerminal-Setup-x.y.z.exe` | Installer. Per-user, **no admin needed**. Start-menu and desktop shortcuts. |
-| `OmniTerminal-x.y.z-win-x64.zip` | Portable. Unzip anywhere and run `OmniTerminal.exe`. |
+| `Ctrl+Shift+P` | Command palette |
+| `Ctrl+Shift+T` | New terminal |
+| `Ctrl+Shift+D` | Another shell of the current terminal |
+| `Ctrl+Shift+W` | Close the tab (the terminal keeps running) |
+| `Ctrl+Tab`, `Ctrl+Alt+1` to `9` | Switch tabs |
+| `Ctrl+Shift+F` | Find in output |
+| `Ctrl+=`, `Ctrl+-`, `Ctrl+0` | Zoom |
+| `Ctrl+C`, `Ctrl+V` | Copy when text is selected (otherwise interrupt), paste |
 
-> The builds are not code-signed yet, so Windows SmartScreen may say *"Windows protected your PC"*. Click **More info → Run anyway**.
+## Supported tools
 
-**Requirements:** Windows 10 1809+ or Windows 11, x64. Shells are detected automatically: Windows PowerShell,
-PowerShell 7, Command Prompt, Git Bash and every WSL distro, plus any custom executable.
+Each terminal points these tools at its own folder or token. The app shows the same information under
+**Settings > Tools** for every terminal, and you can add your own mappings for anything with a config-folder variable.
 
-## Quick start
+| Kind | Separate config folder | Per-terminal token |
+|---|---|---|
+| AI coding | Claude Code, Codex | Anthropic and OpenAI API keys, Gemini CLI |
+| Code hosting | Git (including Git Credential Manager logins), GitHub CLI config, GitLab CLI | GitHub token, GitLab token |
+| Cloud | gcloud, Azure CLI, AWS CLI config, kubectl, Helm, Terraform settings, Pulumi, Oracle Cloud | DigitalOcean, HCP Terraform, Pulumi, Azure DevOps |
+| Hosting and deploys | | Supabase, Netlify, Fly.io, Cloudflare, Railway, Heroku, Expo |
+| Developer services | | Stripe, Sentry, ngrok |
+| Packages | npm, pip | Cargo (crates.io), Deno |
+| Data and ML | Databricks, Kaggle, Hugging Face | Hugging Face |
+| History | PowerShell, Bash, Node and Python history | |
 
-1. Click **+ New Terminal** (`Ctrl+Shift+T`).
-2. Name it (e.g. *Claude · Work*), pick a folder and shell, optionally choose a startup preset like `claude`.
-3. **Create & Launch**. The terminal opens with its own private config folders already wired up.
-4. Log in to your tools inside it (`claude`, `gcloud auth login`, `gh auth login`, …). Other terminals are unaffected.
-5. Close the window whenever you like. Your terminals keep running. Reopen to reconnect.
+What can't be separated, so you know:
+
+- **SSH.** OpenSSH always uses `%USERPROFILE%\.ssh` and the shared ssh-agent.
+- **GitHub CLI's default login.** It goes into Windows Credential Manager, which is shared. Use the token field or
+  `gh auth login --insecure-storage` instead.
+- **AWS SSO token cache.** It always lives in your user folder.
+- **Linux tools inside WSL.** They use the distribution's home folder.
+- **Tools without a config-folder variable.** These keep using their usual location. OmniTerminal doesn't change
+  `HOME` or `USERPROFILE`, because that breaks too many programs.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-  subgraph GUI["OmniTerminal.exe (window)"]
-    R["React UI + xterm.js"]
-  end
-  subgraph SM["Session manager (same exe, Node mode, no window)"]
-    S["Session registry<br/>SQLite + DPAPI secrets"]
-    P1["ConPTY + headless mirror<br/>Terminal 01"]
-    P2["ConPTY + headless mirror<br/>Terminal 02"]
-    PN["… Terminal N"]
-  end
-  R <-- "named pipe<br/>token-authenticated JSON-RPC" --> S
-  S --- P1
-  S --- P2
-  S --- PN
-  P1 --> C1["powershell / claude"]
-  P2 --> C2["git bash / vim"]
+  W["OmniTerminal window<br/>(React + xterm.js)"] <-- "named pipe, token-protected" --> M["Session manager<br/>(same exe, no window)"]
+  M --- A["Terminal 1<br/>ConPTY + screen mirror"]
+  M --- B["Terminal 2"]
+  M --- C["Terminal 1, second shell"]
+  M --- D["SQLite, DPAPI secrets,<br/>screen snapshots"]
 ```
 
-* The **session manager** owns every pseudoconsole. The window is just a viewer.
-  * The manager is launched with no inherited handles and outside the GUI's job object, so it outlives the GUI.
-  * After 10 idle minutes it exits, unless you enable *Start with Windows* or *Keep running*.
-* Each session keeps a **headless xterm mirror**. Reconnecting sends an exact serialized snapshot (scrollback, colors,
-  alternate screen) followed by the live stream. Nothing is lost or duplicated.
-* **Crash recovery:** a restarted manager only kills leftover processes whose PID **and** creation time both match its records,
-  so a PID reused by an unrelated process is never touched.
-* **Data safety:** the SQLite database is written atomically with a rolling backup, and every profile mirrors its metadata to
-  `metadata.json`, which can rebuild the registry if the database is lost.
+**Background process.** The window is only a viewer; a background session manager owns every shell. The manager
+starts without inherited handles and outside the window's job object, so closing or crashing the window doesn't
+touch your terminals.
 
-<details>
-<summary><b>Data layout</b></summary>
+**Screen mirror.** Each shell has a headless terminal mirror in the manager. Reconnecting replays an exact snapshot
+of the screen and scrollback, then streams live output. A redacted copy of each screen is saved every 30 seconds so
+it can be shown again after a restart.
+
+**Crash and restart safety.** After a crash or restart, leftover processes are stopped only when both their PID and
+start time match the record, so a reused PID never hits an unrelated program. Settings are stored in SQLite (Node's
+built-in engine, WAL mode) with a backup copy. Each terminal also writes a `metadata.json`, which can rebuild the list
+if the database is lost.
+
+**Data on disk.**
 
 ```
 %LOCALAPPDATA%\OmniTerminal\
-  omniterminal.db(.bak)         terminals, settings, session registry, UI prefs (no secrets)
-  run\daemon.json               manager pid + pipe + per-run auth token
-  logs\session-manager.log      redacted log
+  omniterminal.db             terminals, settings, session records (no secrets)
+  themes\                     background pictures for custom themes
   profiles\<terminal>\
-    config\claude gcloud github git azure aws kube npm codex …
-    credentials\secrets.dpapi.json      encrypted variables / tokens
-    history\                            PowerShell, bash, node, python history
-    logs\  cache\  environment\  metadata.json
+    config\                   claude, gcloud, github, git, azure, npm, ...
+    credentials\              DPAPI-encrypted variables and tokens
+    history\  logs\  cache\   history, logs, last screen snapshot
 ```
-</details>
 
-## Isolation matrix
+### Footprint
 
-| Tool | How | Isolation |
+Version 1.2.0 measured against 1.1.0 on the same machine, with five terminals open:
+
+| | 1.1.0 | 1.2.0 |
 |---|---|---|
-| **Claude Code** | `CLAUDE_CONFIG_DIR` | ✅ Full: settings, history, OAuth credentials |
-| **Google Cloud SDK** | `CLOUDSDK_CONFIG` | ✅ Full: accounts, credentials, ADC |
-| **Git + Git Credential Manager** | `GIT_CONFIG_GLOBAL`, `GCM_NAMESPACE` | ✅ Full: config and HTTPS credentials (namespaced in Credential Manager) |
-| **Azure CLI** · **kubectl** · **npm** · **Codex** · Hugging Face | `AZURE_CONFIG_DIR` · `KUBECONFIG` · `NPM_CONFIG_USERCONFIG` · `CODEX_HOME` · `HF_HOME` | ✅ Full |
-| **Supabase** · **Netlify** · **Fly.io** · **Cloudflare** | encrypted per-terminal token (`SUPABASE_ACCESS_TOKEN`, …) | ✅ With a token · ⚠️ `… login` alone is shared |
-| **GitHub CLI** | `GH_CONFIG_DIR` + optional `GH_TOKEN` | ✅ With a token or `--insecure-storage` · ⚠️ default keyring is shared |
-| **AWS CLI** | `AWS_CONFIG_FILE`, `AWS_SHARED_CREDENTIALS_FILE` | ⚠️ Partial: SSO cache is global |
-| **Docker** | `DOCKER_CONFIG` | ⚠️ Partial: shared when a credsStore is configured |
-| Shell history | PSReadLine path, `HISTFILE`, `NODE_REPL_HISTORY`, `PYTHON_HISTORY` | ✅ Full (CMD has no saved history) |
-| **SSH** / Linux tools inside **WSL** | n/a | ❌ Shared: `~/.ssh` and ssh-agent are global, and WSL tools use the distro's `$HOME` |
+| Installer | 116.9 MB | 92.5 MB |
+| Installed | 404 MB | 298 MB |
+| Memory (private, whole app) | 493 MB | 382 MB |
 
-Anything else that supports a config-dir env var can be redirected with a **custom mapping** in *Settings → Tools*.
-`HOME`/`USERPROFILE` are intentionally left alone, because changing them breaks too many tools.
+How the savings were made:
 
-## Keyboard shortcuts
+- Only the visible tab uses WebGL.
+- Built-in SQLite replaces a WebAssembly copy.
+- The output worker in each terminal runs with tight memory limits.
+- Unused Chromium language packs and the WebGPU compiler are left out.
 
-| Keys | Action |
-|---|---|
-| `Ctrl+Shift+P` | Command palette: jump to any terminal or action |
-| `Ctrl+Shift+T` / `Ctrl+Shift+W` | New terminal / close tab (session keeps running) |
-| `Ctrl+Tab`, `Ctrl+Alt+1-9` | Switch tabs |
-| `Ctrl+Shift+A` | All terminals dashboard |
-| `Ctrl+Shift+F` | Find in scrollback (case / regex) |
-| `Ctrl+=` `Ctrl+-` `Ctrl+0` | Zoom |
-| `Ctrl+C` / `Ctrl+V` / right-click | Copy (when text is selected, otherwise SIGINT) / paste / copy-or-paste |
-| `Ctrl+click` | Open link |
-
-## Build from source
+## Building from source
 
 ```powershell
 git clone https://github.com/shklala/omniterminal.git
 cd omniterminal
 npm install
-npm run dev          # hot dev build (uses %LOCALAPPDATA%\OmniTerminal-dev, never your real terminals)
-npm test             # 71 unit + integration tests
-npm run test:e2e     # drives the real Electron GUI with Playwright
-npm run dist         # installer + portable zip in .\release
+npm run dev        # development build with its own data folder
+npm test           # 93 unit and integration tests
+npm run test:e2e   # drives the real app window
+npm run dist       # installer and portable zip in .\release
 ```
 
-**Stack:**
+Built with:
 
-* Electron 44, React 19, TypeScript, Vite
-* node-pty (ConPTY) and xterm.js 6 (WebGL, plus a headless mirror in the session manager)
-* sql.js (SQLite/WASM)
-* Windows DPAPI for secrets
+- Electron 44, React 19, TypeScript and Vite
+- node-pty (ConPTY) and xterm.js
+- Node's built-in SQLite
+- Windows DPAPI
+
+The tests run real ConPTY shells, real DPAPI encryption and a real background manager over the named pipe. They cover:
+
+- separate accounts across simultaneous terminals
+- reconnecting after the window closes
+- crash and restart recovery with restored output
+- several shells per terminal, administrator commands, custom themes
+- path and secret safety
 
 <details>
-<summary><b>Project structure</b></summary>
+<summary>Project layout</summary>
 
 | Area | Path |
 |---|---|
-| UI | `src/renderer/` (`App.tsx`, `components/`) |
-| Terminal renderer | `src/renderer/terminal/terminalHost.ts` |
-| PTY layer | `src/daemon/pty/` |
-| Session manager | `src/daemon/sessions/`, `src/daemon/server.ts`, `src/daemon/main.ts` |
-| Profiles | `src/daemon/profiles/profileManager.ts` |
-| Secrets | `src/daemon/credentials/` (DPAPI) |
-| Environment and tool registry | `src/daemon/env/`, `src/shared/tools.ts` |
-| Persistence | `src/daemon/persistence/db.ts` |
-| Security helpers | `src/shared/validation.ts`, `src/shared/redact.ts` |
+| Window UI | `src/renderer/` |
+| Terminal view | `src/renderer/terminal/terminalHost.ts` |
+| Session manager | `src/daemon/` (`sessions/`, `pty/`, `server.ts`, `service.ts`) |
+| Terminal profiles | `src/daemon/profiles/` |
+| Secrets | `src/daemon/credentials/` |
+| Tool list | `src/shared/tools.ts` |
+| Translations | `src/renderer/i18n.ts` |
 | Windows integration | `src/daemon/windows/`, `src/main/` |
+
 </details>
 
-<details>
-<summary><b>What the tests cover</b></summary>
+## Planned
 
-* Profiles:
-  * create, rename, delete, duplicate
-  * invalid names, path traversal, Windows device names
-  * import/export never leaks secrets
-* Sessions on real ConPTY:
-  * 5 simultaneous terminals with isolated env and config folders
-  * reconnect snapshots
-  * GUI-crash vs graceful close
-  * exit codes and restart
-  * quoted startup commands
-  * resource stats
-* Security:
-  * real DPAPI encryption with per-terminal entropy
-  * redaction of tokens and keys in logs
-* PowerShell history isolation per terminal.
-* A real detached session manager over the named pipe:
-  * bad-token rejection
-  * GUI close → reconnect
-  * hard-kill crash recovery with orphan cleanup
-* GUI end-to-end:
-  * create a terminal and type into it
-  * close the app, reopen, auto-reconnect
-  * bell activity dots, find, zoom, command palette
-</details>
-
-## Roadmap
-
-- [ ] Split panes
-- [ ] Code-signed builds and auto-update
-- [ ] Per-terminal SSH agent / key isolation
-- [ ] Terminal groups and workspaces
+- Split panes
+- Code signing and automatic updates
+- Per-terminal SSH keys
+- More languages
 
 ## License
 
-[MIT](LICENSE) © Omar Mohamed Fawzy
+[MIT](LICENSE), Omar Mohamed Fawzy

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { cx } from '../util';
 import { Icon } from './Icon';
+import { t } from '../i18n';
 
 export interface PaletteItem {
   id: string;
@@ -65,7 +66,7 @@ export function CommandPalette({ items, onClose }: { items: PaletteItem[]; onClo
           <Icon name="search" size={15} />
           <input
             autoFocus
-            placeholder="Jump to a terminal or run a command…"
+            placeholder={t('Jump to a terminal or run a command…')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -85,7 +86,7 @@ export function CommandPalette({ items, onClose }: { items: PaletteItem[]; onClo
           <kbd>Esc</kbd>
         </div>
         <div className="palette-list" ref={listRef}>
-          {results.length === 0 && <div className="palette-empty">No matches</div>}
+          {results.length === 0 && <div className="palette-empty">{t('No matches')}</div>}
           {results.map((it, i) => (
             <button
               key={it.id}
@@ -98,7 +99,7 @@ export function CommandPalette({ items, onClose }: { items: PaletteItem[]; onClo
               {it.color ? <span className="profile-color" style={{ background: it.color }} /> : <Icon name={it.icon} size={14} />}
               <span className="palette-label">{it.label}</span>
               {it.hint && <span className="palette-hint">{it.hint}</span>}
-              <span className="palette-group">{it.group === 'Terminals' ? 'Terminal' : 'Action'}</span>
+              <span className="palette-group">{it.group === 'Terminals' ? t('Terminal') : t('Action')}</span>
             </button>
           ))}
         </div>

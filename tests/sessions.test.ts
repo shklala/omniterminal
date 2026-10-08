@@ -133,6 +133,48 @@ describe('PTY sessions (cmd)', () => {
     }, 20000);
   });
 
+  it('"Open another": several shells of one terminal share its accounts and variables', async () => {
+    const p = await ctx.service.profiles.create({ name: 'Multi', shellId: 'cmd', env: [{ name: 'WHO', value: 'multi', secret: false }] });
+    const first = await ctx.service.sessions.start(p.id);
+    const second = (await ctx.service.handle('sessions.newInstance', { profileId: p.id }, 't')) as { key: string; instance: number; pid: number; profileId: string };
+    const third = (await ctx.service.handle('sessions.newInstance', { profileId: p.id }, 't')) as { key: string; instance: number };
+    expect(second.key).toBe(`${p.id}~2`);
+    expect(second.instance).toBe(2);
+    expect(second.profileId).toBe(p.id);
+    expect(third.key).toBe(`${p.id}~3`);
+    expect(second.pid).not.toBe(first.pid);
+
+    const claudeDir = path.join(p.dir, 'config', 'claude');
+    for (const key of [p.id, second.key]) {
+      ctx.service.sessions.write(key, 'echo [%WHO%] [%CLAUDE_CONFIG_DIR%] [%OMNITERMINAL_INSTANCE%]\r');
+    }
+    await waitFor(async () => (await text(p.id)).includes(`[multi] [${claudeDir}] [1]`));
+    await waitFor(async () => (await ctx.service.sessions.textContent(second.key)).includes(`[multi] [${claudeDir}] [2]`));
+
+    // Deleting the terminal stops every one of its shells.
+    await ctx.service.handle('profiles.delete', { id: p.id }, 't');
+    expect(ctx.service.sessions.list().filter((s) => s.profileId === p.id)).toHaveLength(0);
+  });
+
+  it('keeps screen snapshots only while "Reopen terminals after a restart" is on', async () => {
+    const p = await ctx.service.profiles.create({ name: 'Snap', shellId: 'cmd' });
+    await ctx.service.sessions.start(p.id);
+    ctx.service.sessions.write(p.id, 'echo SNAPSHOT_MARKER\r');
+    await waitFor(async () => (await text(p.id)).includes('SNAPSHOT_MARKER\r') || /SNAPSHOT_MARKER[\s\S]*SNAPSHOT_MARKER/.test(await text(p.id)));
+    const file = path.join(p.dir, 'cache', 'last-screen.ans');
+
+    await ctx.service.sessions.saveSnapshots();
+    expect(fs.readFileSync(file, 'utf8')).toContain('SNAPSHOT_MARKER');
+
+    // Turning the option off deletes saved output and stops new snapshots.
+    ctx.service.setSettings({ restoreAfterRestart: false });
+    expect(fs.existsSync(file)).toBe(false);
+    ctx.service.sessions.write(p.id, 'echo MORE\r');
+    await new Promise((r) => setTimeout(r, 800));
+    await ctx.service.sessions.saveSnapshots();
+    expect(fs.existsSync(file)).toBe(false);
+  });
+
   it('runs a startup command', async () => {
     const p = await ctx.service.profiles.create({ name: 'Startup', shellId: 'cmd', startupCommand: 'echo STARTUP_RAN_%OMNITERMINAL%' });
     await ctx.service.sessions.start(p.id);
@@ -191,5 +233,22 @@ describe('PowerShell per-terminal history', () => {
     expect(fs.readFileSync(ha, 'utf8')).not.toContain('only-in-B');
     expect(fs.readFileSync(hb, 'utf8')).toContain('only-in-B');
     expect(fs.readFileSync(hb, 'utf8')).not.toContain('only-in-A');
+  }, 90000);
+
+  it('keeps using the terminal\'s history file after a restart (file already exists)', async () => {
+    const a = await ctx.service.profiles.create({ name: 'PsR', shellId: 'powershell' });
+    const hist = path.join(a.dir, 'history', 'powershell_history.txt');
+    fs.mkdirSync(path.dirname(hist), { recursive: true });
+    fs.writeFileSync(hist, 'echo earlier-session-cmd\r\n');
+    await ctx.service.sessions.start(a.id);
+    await waitFor(async () => /PS .*>/.test(await text(a.id)), 40000);
+    await runAndWait(a.id, 'echo "second-session-$(1+1)"', 'second-session-2', 30000);
+    await runAndWait(
+      a.id,
+      '"loaded=$(@([Microsoft.PowerShell.PSConsoleReadLine]::GetHistoryItems() | ? CommandLine -eq \'echo earlier-session-cmd\').Count)"',
+      /loaded=1/,
+      30000,
+    );
+    await waitFor(() => fs.readFileSync(hist, 'utf8').includes('second-session-'), 10000);
   }, 90000);
 });

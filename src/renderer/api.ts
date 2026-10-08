@@ -9,6 +9,12 @@ export interface AppInfo {
   autostart: boolean;
 }
 
+export interface ElevationStatus {
+  managerElevated: boolean;
+  sudo: 'unavailable' | 'disabled' | 'newWindow' | 'inputClosed' | 'inline';
+  sudoPath: string;
+}
+
 export interface DaemonStatus {
   connected: boolean;
   pid: number | null;
@@ -34,6 +40,11 @@ interface OmniBridge {
   exitCompletely(): Promise<void>;
   quitGui(): Promise<void>;
   attention(): Promise<void>;
+  setTitleBar(theme: string): Promise<void>;
+  pickThemeImage(): Promise<string | null>;
+  themeImageUrl(name: string): Promise<string | null>;
+  enableSudo(): Promise<{ ok: boolean; status: ElevationStatus }>;
+  openElevatedWindow(cwd: string): Promise<boolean>;
   focusWindow(): Promise<void>;
 }
 
@@ -65,7 +76,8 @@ export const api = {
   resize: (profileId: string, cols: number, rows: number) => bridge.invoke('sessions.resize', { profileId, cols, rows }),
   start: (profileId: string) => bridge.invoke<SessionInfo>('sessions.start', { profileId }),
   stop: (profileId: string) => bridge.invoke('sessions.stop', { profileId }),
-  restart: (profileId: string, cols?: number, rows?: number) => bridge.invoke<SessionInfo>('sessions.restart', { profileId, cols, rows }),
+  restart: (profileId: string, cols?: number, rows?: number, elevated = false) =>
+    bridge.invoke<SessionInfo>('sessions.restart', { profileId, cols, rows, elevated }),
   setSettings: (settings: Record<string, unknown>) => bridge.invoke('settings.set', { settings }),
   getUiPrefs: () => bridge.invoke<Record<string, unknown>>('uiPrefs.get'),
   setUiPref: (key: string, value: unknown) => bridge.invoke('uiPrefs.set', { key, value }),

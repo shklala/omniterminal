@@ -1,6 +1,8 @@
 // OmniTerminal GUI (Electron main process). Owns windows only — never terminal processes.
 
 import { BrowserWindow, Menu, app, clipboard, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
+import { spawn } from 'node:child_process';
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { APP_VERSION } from '../shared/defaults';
@@ -68,11 +70,11 @@ function createWindow(): void {
     height: st.height,
     minWidth: 760,
     minHeight: 480,
-    backgroundColor: '#0d1117',
+    backgroundColor: '#1a1a1a',
     title: 'OmniTerminal',
     icon: path.join(appDir, 'build', 'icon.ico'),
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#0d1117', symbolColor: '#c9d1d9', height: 38 },
+    titleBarOverlay: { color: '#1a1a1a', symbolColor: '#d6d6d6', height: 40 },
     show: false,
     webPreferences: {
       preload: path.join(appDir, 'dist', 'preload.js'),
@@ -106,7 +108,9 @@ function createWindow(): void {
 
 // ---------- IPC ----------
 
-const ALLOWED_PREFIXES = ['app.', 'profiles.', 'sessions.', 'settings.', 'uiPrefs.', 'shells.', 'ping'];
+const ALLOWED_PREFIXES = ['app.', 'profiles.', 'sessions.', 'settings.', 'uiPrefs.', 'shells.', 'system.elevation', 'themes.', 'ping'];
+const THEME_IMAGE_RE = /^[a-z0-9-]{8,64}\.(png|jpe?g|webp|gif)$/i;
+const IMAGE_MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
 
 function registerIpc(): void {
   const send = (channel: string, ...args: unknown[]) => {
@@ -197,6 +201,59 @@ function registerIpc(): void {
     await bridge.shutdownDaemon();
     app.exit(0);
   });
+  handle('omni:enable-sudo', async () => {
+    // One-time, user-initiated: Windows shows a UAC prompt for "sudo config --enable normal".
+    const sudoExe = path.join(systemRoot(), 'System32', 'sudo.exe');
+    const script = `Start-Process -FilePath '${sudoExe}' -ArgumentList 'config','--enable','normal' -Verb RunAs -Wait -WindowStyle Hidden`;
+    const code = await runHiddenPowerShell(script);
+    return { ok: code === 0, status: await bridge.call('system.elevation') };
+  });
+  handle('omni:open-elevated-window', async (_e, cwd: string) => {
+    // Fallback when Windows sudo is unavailable: a separate elevated PowerShell window in this folder.
+    const dir = typeof cwd === 'string' && cwd && fs.existsSync(cwd) ? cwd : process.env.USERPROFILE || path.parse(systemRoot()).root;
+    const q = (s: string) => `'${s.replace(/'/g, "''")}'`;
+    const script = `Start-Process -FilePath powershell.exe -Verb RunAs -WorkingDirectory ${q(dir)} -ArgumentList '-NoExit','-Command',${q(`Set-Location -LiteralPath ${q(dir)}`)}`;
+    return (await runHiddenPowerShell(script)) === 0;
+  });
+  handle('omni:set-titlebar', (_e, theme: string) => {
+    // Match Windows' native caption buttons and the window background to the UI theme.
+    if (!win) return;
+    const frames: Record<string, [string, string, string]> = {
+      // [caption bar colour, caption symbol colour, window background]
+      dark: ['#1a1a1a', '#d6d6d6', '#1a1a1a'],
+      light: ['#ebebeb', '#1b1b1b', '#f3f3f3'],
+      midnight: ['#0b0f19', '#c9d2e3', '#0f1420'],
+      nord: ['#292e39', '#d8dee9', '#2e3440'],
+    };
+    const [color, symbolColor, bg] = frames[theme] ?? frames.dark;
+    win.setTitleBarOverlay({ color, symbolColor, height: 40 });
+    win.setBackgroundColor(bg);
+  });
+  handle('omni:pick-theme-image', async () => {
+    // Copies the chosen picture into the app's own themes folder; the theme stores only the file name.
+    const r = await dialog.showOpenDialog(win!, {
+      title: 'Choose a background image',
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
+    });
+    if (r.canceled || !r.filePaths[0]) return null;
+    const src = r.filePaths[0];
+    const ext = path.extname(src).slice(1).toLowerCase();
+    if (!IMAGE_MIME[ext]) throw new Error('Choose a PNG, JPG, WebP or GIF image.');
+    if (fs.statSync(src).size > 15 * 1024 * 1024) throw new Error('The image is larger than 15 MB.');
+    const dir = path.join(paths.home, 'themes');
+    fs.mkdirSync(dir, { recursive: true });
+    const name = `${crypto.randomUUID()}.${ext}`;
+    fs.copyFileSync(src, path.join(dir, name));
+    return name;
+  });
+  handle('omni:theme-image-url', (_e, name: string) => {
+    if (typeof name !== 'string' || !THEME_IMAGE_RE.test(name)) return null;
+    const file = path.join(paths.home, 'themes', name);
+    if (!fs.existsSync(file)) return null;
+    const ext = path.extname(name).slice(1).toLowerCase();
+    return `data:${IMAGE_MIME[ext]};base64,${fs.readFileSync(file).toString('base64')}`;
+  });
   handle('omni:attention', () => {
     // Flash the taskbar button until the user focuses the window.
     if (win && !win.isFocused()) win.flashFrame(true);
@@ -209,6 +266,19 @@ function registerIpc(): void {
   });
   handle('omni:quit-gui', () => {
     app.quit();
+  });
+}
+
+function systemRoot(): string {
+  return process.env.SystemRoot || 'C:\\Windows';
+}
+
+function runHiddenPowerShell(script: string): Promise<number> {
+  return new Promise((resolve) => {
+    const ps = path.join(systemRoot(), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    const child = spawn(ps, ['-NoLogo', '-NoProfile', '-NonInteractive', '-InputFormat', 'None', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, stdio: 'ignore' });
+    child.on('error', () => resolve(1));
+    child.on('close', (code) => resolve(code ?? 1));
   });
 }
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AppState, Profile, SessionInfo } from '../shared/types';
 import type { ResourceStats } from './util';
-import { api, bridge, errorMessage, type DaemonStatus } from './api';
+import { api, bridge, errorMessage, type DaemonStatus, type ElevationStatus } from './api';
 import { AppSettingsDialog } from './components/AppSettingsDialog';
 import { ContextMenu, Sidebar, TabBar, TopBar, type MenuItem } from './components/Chrome';
 import { Dashboard } from './components/Dashboard';
@@ -9,19 +9,25 @@ import { FindBar } from './components/FindBar';
 import { CommandPalette, type PaletteItem } from './components/CommandPalette';
 import { ConfirmDialog, PromptDialog } from './components/Dialog';
 import { Icon } from './components/Icon';
-import { NewTerminalDialog, ProfileSettingsDialog } from './components/ProfileDialogs';
+import { NewTerminalDialog, ProfileSettingsDialog, type NewTerminalPreset } from './components/ProfileDialogs';
 import { TerminalView } from './components/TerminalView';
 import { hosts } from './terminal/terminalHost';
-import { uiStatus } from './util';
+import { supportsElevation, uiStatus } from './util';
+import { baseProfileId, instanceNumber } from '../shared/sessionKey';
+import { getLanguage, setLanguage, t } from './i18n';
+import { setCustomThemes } from './themes';
 
 type DialogState =
-  | { kind: 'new' }
+  | { kind: 'new'; preset?: NewTerminalPreset }
   | { kind: 'settings'; id: string }
   | { kind: 'rename'; id: string }
   | { kind: 'delete'; id: string }
   | { kind: 'app-settings' }
   | { kind: 'exit' }
   | { kind: 'stop-all' }
+  | { kind: 'enable-sudo'; id: string; then: 'continue' | 'restart' }
+  | { kind: 'run-admin'; id: string }
+  | { kind: 'no-sudo'; id: string }
   | null;
 
 interface Toast {
@@ -43,6 +49,8 @@ export function App() {
   const [, setHostTick] = useState(0);
   const [findOpen, setFindOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [elevation, setElevation] = useState<ElevationStatus | null>(null);
+  const [adminHint, setAdminHint] = useState<string | null>(null);
   const [stats, setStats] = useState<Record<string, ResourceStats>>({});
   const [zoomMsg, setZoomMsg] = useState<string | null>(null);
   const zoomTimer = useRef<number | null>(null);
@@ -93,7 +101,7 @@ export function App() {
         hosts.get(d.profileId)?.handleExit(d.sessionId, d.exitCode);
         if (!stopping.current.delete(d.profileId) && d.profileId !== activeRef.current) {
           const name = profilesRef.current.find((p) => p.id === d.profileId)?.name ?? 'A terminal';
-          toastRef.current(`"${name}" exited (code ${d.exitCode ?? '?'})`, d.exitCode ? 'error' : 'info');
+          toastRef.current(t('"{name}" exited (code {code})', { name, code: d.exitCode ?? '?' }), d.exitCode ? 'error' : 'info');
         }
         scheduleRefresh();
       } else if (ev === 'state.changed') {
@@ -128,13 +136,13 @@ export function App() {
     void (async () => {
       const prefs = await api.getUiPrefs().catch(() => ({}) as Record<string, unknown>);
       const savedTabs = Array.isArray(prefs.openTabs) ? (prefs.openTabs as string[]) : [];
-      const running = state.sessions.filter((s) => s.state === 'running').map((s) => s.profileId);
+      const running = state.sessions.filter((s) => s.state === 'running').map((s) => s.key);
       const ordered = [...savedTabs.filter((id) => running.includes(id)), ...running.filter((id) => !savedTabs.includes(id))];
       ordered.forEach((id) => autoStart.current.set(id, false));
       setTabs(ordered);
       const savedActive = typeof prefs.active === 'string' ? prefs.active : '';
       setActive(ordered.includes(savedActive) ? savedActive : ordered[0] ?? 'dashboard');
-      if (ordered.length) toast(`Reconnected to ${ordered.length} running terminal${ordered.length === 1 ? '' : 's'}`);
+      if (ordered.length) toast(ordered.length === 1 ? t('Reconnected to 1 running terminal') : t('Reconnected to {n} running terminals', { n: ordered.length }));
     })();
   }, [state, toast]);
 
@@ -147,13 +155,21 @@ export function App() {
   const profiles = state?.profiles ?? [];
   profilesRef.current = profiles;
   const profileMap = useMemo(() => new Map(profiles.map((p) => [p.id, p])), [profiles]);
-  const sessionMap = useMemo(() => new Map((state?.sessions ?? []).map((s) => [s.profileId, s] as [string, SessionInfo])), [state]);
+  /** Live shells by session key. A terminal's first shell uses its profile id as key. */
+  const sessionMap = useMemo(() => new Map((state?.sessions ?? []).map((s) => [s.key, s] as [string, SessionInfo])), [state]);
+  const instanceMap = useMemo(() => {
+    const m = new Map<string, SessionInfo[]>();
+    for (const s of state?.sessions ?? []) {
+      if (s.instance > 1 && s.state === 'running') m.set(s.profileId, [...(m.get(s.profileId) ?? []), s].sort((a, b) => a.instance - b.instance));
+    }
+    return m;
+  }, [state]);
 
   // Drop tabs whose profile was deleted (e.g. from another window). Runs only on fresh state,
   // so a tab opened for a just-created profile is never dropped by a stale snapshot.
   useEffect(() => {
     if (!state) return;
-    const gone = tabsRef.current.filter((id) => !profileMap.has(id));
+    const gone = tabsRef.current.filter((id) => !profileMap.has(baseProfileId(id)));
     if (gone.length === 0) return;
     gone.forEach((id) => {
       hosts.get(id)?.dispose(false);
@@ -210,7 +226,7 @@ export function App() {
       const ids = (state?.sessions ?? []).filter((s) => s.state === 'running').map((s) => s.profileId);
       ids.forEach((id) => stopping.current.add(id));
       await Promise.all(ids.map((id) => api.stop(id)));
-    }, 'Stopped all terminals');
+    }, t('Stopped all terminals'));
 
   // Background tab printed output / rang the bell. Bells flash the taskbar and notify when unfocused.
   const onActivity = useCallback((profileId: string, kind: 'none' | 'output' | 'bell') => {
@@ -226,6 +242,65 @@ export function App() {
       };
     }
   }, []);
+
+  // ----- administrator rights -----
+  useEffect(() => {
+    if (!daemon.connected) return;
+    void bridge.invoke<ElevationStatus>('system.elevation').then(setElevation).catch(() => undefined);
+  }, [daemon.connected]);
+
+  const shellKind = (id: string) => {
+    const p = profilesRef.current.find((x) => x.id === baseProfileId(id));
+    return state?.shells.find((s) => s.id === p?.shellId)?.kind;
+  };
+
+  /** Continue this terminal with administrator rights, in place (Windows sudo, inline mode). */
+  const continueAsAdmin = async (id: string) => {
+    setAdminHint(null);
+    const status = await bridge.invoke<ElevationStatus>('system.elevation').catch(() => null);
+    if (status) setElevation(status);
+    if (!status) return toast('Could not check administrator support.', 'error');
+    if (status.managerElevated) return toast('This terminal already has administrator rights.');
+    if (!supportsElevation(shellKind(id))) {
+      return toast('Continue as Administrator works in PowerShell, Command Prompt and Git Bash terminals.', 'error');
+    }
+    if (status.sudo === 'unavailable') return setDialog({ kind: 'no-sudo', id });
+    if (status.sudo !== 'inline') return setDialog({ kind: 'enable-sudo', id, then: 'continue' });
+    openTerminal(id, false);
+    await run(() => bridge.invoke('sessions.elevate', { profileId: id }));
+    hosts.get(id)?.focus();
+  };
+
+  /** "Run as Administrator": restart the terminal with administrator rights (Windows sudo). */
+  const runAsAdmin = async (id: string, confirmed = false) => {
+    const status = await bridge.invoke<ElevationStatus>('system.elevation').catch(() => null);
+    if (status) setElevation(status);
+    if (!status) return toast('Could not check administrator support.', 'error');
+    if (status.managerElevated) return toast('OmniTerminal already runs as administrator, so every terminal has administrator rights.');
+    if (!supportsElevation(shellKind(id))) {
+      return toast('Run as Administrator works in PowerShell, Command Prompt and Git Bash terminals.', 'error');
+    }
+    if (status.sudo === 'unavailable') return setDialog({ kind: 'no-sudo', id });
+    if (status.sudo !== 'inline') return setDialog({ kind: 'enable-sudo', id, then: 'restart' });
+    const running = sessionMap.get(id)?.state === 'running';
+    if (running && !confirmed) return setDialog({ kind: 'run-admin', id });
+    await restartAs(id, true);
+  };
+
+  const restartAs = async (id: string, elevated: boolean) => {
+    stopping.current.add(id);
+    const h = hosts.get(id);
+    if (h) {
+      setActive(id);
+      await run(() => h.restartSession(elevated));
+    } else {
+      await run(async () => {
+        await api.restart(id, undefined, undefined, elevated);
+        openTerminal(id, false);
+      });
+    }
+    hosts.get(id)?.focus();
+  };
 
   const reorder = (ids: string[]) => {
     setState((st) => (st ? { ...st, profiles: ids.map((id) => st.profiles.find((p) => p.id === id)!).filter(Boolean).map((p, i) => ({ ...p, sortOrder: i + 1 })) } : st));
@@ -258,26 +333,44 @@ export function App() {
   };
   const duplicate = (id: string) =>
     run(async () => {
-      const p = await api.duplicateProfile(id);
-      toast(`Created "${p.name}" — configuration only. Credentials were NOT copied; sign in again there.`);
+      const p = await api.duplicateProfile(baseProfileId(id));
+      toast(`Created "${p.name}" with the same settings. Logins and secrets were not copied, so sign in there again.`);
     });
 
-  const menuItems = (id: string): (MenuItem | 'sep')[] => {
-    const s = sessionMap.get(id);
+  /** "Open another": a new shell of the same terminal, sharing its accounts and variables. */
+  const openAnother = (id: string) =>
+    run(async () => {
+      const info = await bridge.invoke<SessionInfo>('sessions.newInstance', { profileId: baseProfileId(id) });
+      await refresh();
+      openTerminal(info.key, false);
+    });
+
+  const menuItems = (key: string): (MenuItem | 'sep')[] => {
+    const id = baseProfileId(key);
+    const s = sessionMap.get(key);
     const running = s?.state === 'running';
-    const open = tabs.includes(id);
+    const open = tabs.includes(key);
     return [
-      { label: running ? (open ? 'Show' : 'Reconnect') : 'Open', icon: running ? 'link' : 'play', onClick: () => openTerminal(id, true) },
-      { label: 'Restart', icon: 'restart', onClick: () => void restart(id) },
-      { label: 'Stop', icon: 'stop', disabled: !running, onClick: () => void stop(id) },
+      { label: t(running ? (open ? 'Show' : 'Reconnect') : 'Open'), icon: running ? 'link' : 'play', onClick: () => openTerminal(key, true) },
+      { label: t('Restart'), icon: 'restart', onClick: () => void restart(key) },
+      { label: t('Stop'), icon: 'stop', disabled: !running, onClick: () => void stop(key) },
+      ...(supportsElevation(shellKind(id)) && !elevation?.managerElevated
+        ? s?.elevated
+          ? [{ label: t('Restart normally (not admin)'), icon: 'restart', onClick: () => void restartAs(key, false) }]
+          : [
+              { label: t('Run as Administrator'), icon: 'shield', onClick: () => void runAsAdmin(key) },
+              { label: t('Continue as Administrator (in place)'), icon: 'shield', disabled: !running, onClick: () => void continueAsAdmin(key) },
+            ]
+        : []),
+      { label: t('Open another'), icon: 'plus', onClick: () => void openAnother(key) },
       'sep',
-      { label: 'Rename…', icon: 'edit', onClick: () => setDialog({ kind: 'rename', id }) },
-      { label: 'Duplicate (no credentials)', icon: 'copy', onClick: () => void duplicate(id) },
-      { label: 'Settings…', icon: 'settings', onClick: () => setDialog({ kind: 'settings', id }) },
-      { label: 'Export configuration…', icon: 'download', onClick: () => void run(() => bridge.exportProfiles([id])) },
-      { label: 'Open profile folder', icon: 'folder', onClick: () => { const p = profileMap.get(id); if (p) void bridge.openPath(p.dir); } },
+      { label: t('Rename…'), icon: 'edit', onClick: () => setDialog({ kind: 'rename', id }) },
+      { label: t('Duplicate (no credentials)'), icon: 'copy', onClick: () => void duplicate(id) },
+      { label: t('Settings…'), icon: 'settings', onClick: () => setDialog({ kind: 'settings', id }) },
+      { label: t('Export configuration…'), icon: 'download', onClick: () => void run(() => bridge.exportProfiles([id])) },
+      { label: t('Open profile folder'), icon: 'folder', onClick: () => { const p = profileMap.get(id); if (p) void bridge.openPath(p.dir); } },
       'sep',
-      { label: 'Delete…', icon: 'trash', danger: true, onClick: () => setDialog({ kind: 'delete', id }) },
+      { label: t('Delete…'), icon: 'trash', danger: true, onClick: () => setDialog({ kind: 'delete', id }) },
     ];
   };
 
@@ -297,6 +390,8 @@ export function App() {
       const key = e.key.toLowerCase();
       if (e.shiftKey && key === 'p') {
         setPaletteOpen(true);
+      } else if (e.shiftKey && key === 'd') {
+        if (activeRef.current !== 'dashboard') void openAnother(activeRef.current);
       } else if (e.shiftKey && key === 't') {
         setDialog({ kind: 'new' });
       } else if (e.shiftKey && key === 'w') {
@@ -337,7 +432,7 @@ export function App() {
   useEffect(() => {
     const p = active !== 'dashboard' ? profilesRef.current.find((x) => x.id === active) : undefined;
     const t = p ? hosts.get(p.id)?.title : '';
-    document.title = p ? `${p.name}${t ? ` — ${t}` : ''} · OmniTerminal` : 'OmniTerminal';
+    document.title = p ? `${t ? `${t} - ` : ''}${p.name} - OmniTerminal` : 'OmniTerminal';
   });
 
   useEffect(() => setFindOpen(false), [active]);
@@ -351,6 +446,8 @@ export function App() {
     }
     let stop = false;
     const tick = async () => {
+      // Each sample asks Windows for the process table; skip it when nobody is looking.
+      if (document.hidden || !document.hasFocus()) return;
       try {
         const r = await bridge.invoke<Record<string, ResourceStats>>('sessions.stats');
         if (!stop) setStats(r);
@@ -359,14 +456,45 @@ export function App() {
       }
     };
     void tick();
-    const t = window.setInterval(tick, 4000);
+    const t = window.setInterval(tick, 5000);
+    window.addEventListener('focus', tick);
     return () => {
       stop = true;
       window.clearInterval(t);
+      window.removeEventListener('focus', tick);
     };
   }, [anyRunning]);
 
+  // Repaint open terminals when a custom theme is created, edited or deleted.
+  const customThemesJson = JSON.stringify(state?.customThemes ?? []);
+  useEffect(() => {
+    setCustomThemes(JSON.parse(customThemesJson));
+    for (const h of hosts.values()) h.refreshTheme();
+  }, [customThemesJson]);
+
+  // ----- theme -----
+  const uiTheme = state?.settings.uiTheme ?? 'dark';
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => {
+      const resolved = uiTheme === 'system' ? (mq.matches ? 'dark' : 'light') : ['light', 'midnight', 'nord'].includes(uiTheme) ? uiTheme : 'dark';
+      document.documentElement.dataset.theme = resolved;
+      void bridge.setTitleBar(resolved);
+    };
+    apply();
+    if (uiTheme !== 'system') return;
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, [uiTheme]);
+
+  const setAppSetting = (patch: Record<string, unknown>) => void run(async () => {
+    await api.setSettings(patch);
+    await refresh();
+  });
+
   // ----- render -----
+  if (state && state.settings.language !== getLanguage()) setLanguage(state.settings.language);
+  if (state) setCustomThemes(state.customThemes);
   if (!state) {
     return (
       <div className="splash">
@@ -377,13 +505,14 @@ export function App() {
     );
   }
 
-  const activeProfile = active !== 'dashboard' ? profileMap.get(active) : undefined;
-  const activeSession = activeProfile ? sessionMap.get(activeProfile.id) : undefined;
-  const dialogProfile = dialog && 'id' in dialog ? profileMap.get(dialog.id) : undefined;
+  const activeProfile = active !== 'dashboard' ? profileMap.get(baseProfileId(active)) : undefined;
+  const activeSession = activeProfile ? sessionMap.get(active) : undefined;
+  const activeInstance = instanceNumber(active);
+  const dialogProfile = dialog && 'id' in dialog ? profileMap.get(baseProfileId(dialog.id)) : undefined;
   const runningCount = state.sessions.filter((s) => s.state === 'running').length;
   const activity = new Map([...hosts].map(([id, h]) => [id, h.activity] as [string, typeof h.activity]));
   // Program titles, minus the terminal's own name (PowerShell titles itself after the profile).
-  const titles = new Map([...hosts].map(([id, h]) => [id, h.title === profileMap.get(id)?.name ? '' : h.title] as [string, string]));
+  const titles = new Map([...hosts].map(([id, h]) => [id, h.title === profileMap.get(baseProfileId(id))?.name ? '' : h.title] as [string, string]));
   const activeHost = activeProfile ? hosts.get(activeProfile.id) : undefined;
 
   const paletteItems: PaletteItem[] = [
@@ -392,36 +521,50 @@ export function App() {
       return {
         id: `t:${p.id}`,
         label: p.name,
-        hint: st === 'stopped' || st === 'exited' ? 'start' : st === 'disconnected' ? 'reconnect' : titles.get(p.id) || 'running',
+        hint: st === 'stopped' || st === 'exited' ? t('start') : st === 'disconnected' ? t('reconnect') : titles.get(p.id) || t('running'),
         icon: 'terminal',
         color: p.color,
         group: 'Terminals',
         run: () => openTerminal(p.id, true),
       };
     }),
-    { id: 'a:new', label: 'New Terminal', hint: 'Ctrl+Shift+T', icon: 'plus', group: 'Actions', run: () => setDialog({ kind: 'new' }) },
-    { id: 'a:all', label: 'Show All Terminals', hint: 'Ctrl+Shift+A', icon: 'grid', group: 'Actions', run: () => setActive('dashboard') },
+    { id: 'a:new', label: t('New Terminal'), hint: 'Ctrl+Shift+T', icon: 'plus', group: 'Actions', run: () => setDialog({ kind: 'new' }) },
+    { id: 'a:all', label: t('Show All Terminals'), hint: 'Ctrl+Shift+A', icon: 'grid', group: 'Actions', run: () => setActive('dashboard') },
     ...(activeProfile
       ? ([
-          { id: 'a:restart', label: `Restart ${activeProfile.name}`, icon: 'restart', group: 'Actions', run: () => void restart(activeProfile.id) },
-          { id: 'a:stop', label: `Stop ${activeProfile.name}`, icon: 'stop', group: 'Actions', run: () => void stop(activeProfile.id) },
-          { id: 'a:settings', label: `Settings: ${activeProfile.name}`, icon: 'settings', group: 'Actions', run: () => setDialog({ kind: 'settings', id: activeProfile.id }) },
-          { id: 'a:dup', label: `Duplicate ${activeProfile.name} (no credentials)`, icon: 'copy', group: 'Actions', run: () => void duplicate(activeProfile.id) },
-          { id: 'a:find', label: 'Find in Terminal', hint: 'Ctrl+Shift+F', icon: 'search', group: 'Actions', run: () => setFindOpen(true) },
-          { id: 'a:folder', label: `Open Profile Folder: ${activeProfile.name}`, icon: 'folder', group: 'Actions', run: () => void bridge.openPath(activeProfile.dir) },
+          { id: 'a:another', label: t('Open another {name}', { name: activeProfile.name }), hint: 'Ctrl+Shift+D', icon: 'plus', group: 'Actions', run: () => void openAnother(active) },
+          { id: 'a:restart', label: t('Restart {name}', { name: activeProfile.name }), icon: 'restart', group: 'Actions', run: () => void restart(active) },
+          { id: 'a:stop', label: t('Stop {name}', { name: activeProfile.name }), icon: 'stop', group: 'Actions', run: () => void stop(active) },
+          { id: 'a:settings', label: t('Settings: {name}', { name: activeProfile.name }), icon: 'settings', group: 'Actions', run: () => setDialog({ kind: 'settings', id: activeProfile.id }) },
+          { id: 'a:dup', label: t('Duplicate {name} (no credentials)', { name: activeProfile.name }), icon: 'copy', group: 'Actions', run: () => void duplicate(activeProfile.id) },
+          ...(supportsElevation(shellKind(activeProfile.id)) && !elevation?.managerElevated
+            ? [
+                { id: 'a:runadmin', label: t('Run {name} as Administrator', { name: activeProfile.name }), icon: 'shield', group: 'Actions' as const, run: () => void runAsAdmin(active) },
+                { id: 'a:admin', label: t('Continue {name} as Administrator (in place)', { name: activeProfile.name }), icon: 'shield', group: 'Actions' as const, run: () => void continueAsAdmin(active) },
+              ]
+            : []),
+          { id: 'a:find', label: t('Find in Terminal'), hint: 'Ctrl+Shift+F', icon: 'search', group: 'Actions', run: () => setFindOpen(true) },
+          { id: 'a:folder', label: t('Open Profile Folder: {name}', { name: activeProfile.name }), icon: 'folder', group: 'Actions', run: () => void bridge.openPath(activeProfile.dir) },
         ] as PaletteItem[])
       : []),
-    { id: 'a:stopall', label: 'Stop All Terminals', icon: 'stop', group: 'Actions', run: () => setDialog({ kind: 'stop-all' }) },
+    { id: 'a:stopall', label: t('Stop All Terminals'), icon: 'stop', group: 'Actions', run: () => setDialog({ kind: 'stop-all' }) },
     {
-      id: 'a:import', label: 'Import Terminal Configuration…', icon: 'upload', group: 'Actions',
+      id: 'a:import', label: t('Import Terminal Configuration…'), icon: 'upload', group: 'Actions',
       run: () => void run(async () => {
         const n = await bridge.importProfiles();
         if (n) toast(`Imported ${n} terminal${n === 1 ? '' : 's'}`);
       }),
     },
-    { id: 'a:export', label: 'Export All Terminal Configuration…', icon: 'download', group: 'Actions', run: () => void run(() => bridge.exportProfiles()) },
-    { id: 'a:appsettings', label: 'OmniTerminal Settings', icon: 'settings', group: 'Actions', run: () => setDialog({ kind: 'app-settings' }) },
-    { id: 'a:exit', label: 'Exit Completely (stop everything)', icon: 'power', group: 'Actions', run: () => setDialog({ kind: 'exit' }) },
+    { id: 'a:export', label: t('Export All Terminal Configuration…'), icon: 'download', group: 'Actions', run: () => void run(() => bridge.exportProfiles()) },
+    { id: 'a:appsettings', label: t('OmniTerminal Settings'), icon: 'settings', group: 'Actions', run: () => setDialog({ kind: 'app-settings' }) },
+    { id: 'a:theme-dark', label: t('Theme: Dark'), icon: 'settings', group: 'Actions', run: () => setAppSetting({ uiTheme: 'dark' }) },
+    { id: 'a:theme-light', label: t('Theme: Light'), icon: 'settings', group: 'Actions', run: () => setAppSetting({ uiTheme: 'light' }) },
+    { id: 'a:theme-system', label: t('Theme: Use Windows setting'), icon: 'settings', group: 'Actions', run: () => setAppSetting({ uiTheme: 'system' }) },
+    { id: 'a:theme-midnight', label: t('Theme: Midnight'), icon: 'settings', group: 'Actions', run: () => setAppSetting({ uiTheme: 'midnight' }) },
+    { id: 'a:theme-nord', label: t('Theme: Nord'), icon: 'settings', group: 'Actions', run: () => setAppSetting({ uiTheme: 'nord' }) },
+    { id: 'a:lang-en', label: t('Language: English'), hint: 'English', icon: 'globe', group: 'Actions', run: () => setAppSetting({ language: 'en' }) },
+    { id: 'a:lang-ar', label: t('Language: Arabic'), hint: 'العربية', icon: 'globe', group: 'Actions', run: () => setAppSetting({ language: 'ar' }) },
+    { id: 'a:exit', label: t('Exit Completely (stop everything)'), icon: 'power', group: 'Actions', run: () => setDialog({ kind: 'exit' }) },
   ];
 
   return (
@@ -439,6 +582,9 @@ export function App() {
         onSettings={() => setDialog({ kind: 'app-settings' })}
         onReorder={reorder}
         activity={activity}
+        shells={state.shells}
+        titles={titles}
+        instances={instanceMap}
       />
       <main className="main">
         <TabBar
@@ -454,18 +600,29 @@ export function App() {
         />
         {activeProfile && (
           <TopBar
-            profile={activeProfile}
+            profile={activeInstance > 1 ? { ...activeProfile, name: `${activeProfile.name} ${activeInstance}` } : activeProfile}
             session={activeSession}
             shells={state.shells}
             status={uiStatus(activeSession, true)}
             onNew={() => setDialog({ kind: 'new' })}
-            onReconnect={() => void reconnect(activeProfile.id)}
-            onRestart={() => void restart(activeProfile.id)}
-            onStop={() => void stop(activeProfile.id)}
+            onReconnect={() => void reconnect(active)}
+            onRestart={() => void restart(active)}
+            onStop={() => void stop(active)}
             onSettings={() => setDialog({ kind: 'settings', id: activeProfile.id })}
-            onStart={() => openTerminal(activeProfile.id, true)}
-            programTitle={titles.get(activeProfile.id) ?? ''}
-            stats={stats[activeProfile.id]}
+            onStart={() => openTerminal(active, true)}
+            programTitle={titles.get(active) ?? ''}
+            admin={
+              elevation?.managerElevated
+                ? 'all'
+                : activeSession?.elevated && activeSession.state === 'running'
+                  ? 'session'
+                  : supportsElevation(shellKind(active))
+                    ? 'available'
+                    : null
+            }
+            onRunAsAdmin={() => void runAsAdmin(active)}
+            onRestartNormal={() => void restartAs(active, false)}
+            stats={stats[active]}
           />
         )}
         <div className="content">
@@ -485,26 +642,48 @@ export function App() {
               })}
               onExportAll={() => void run(() => bridge.exportProfiles())}
               onStopAll={() => setDialog({ kind: 'stop-all' })}
+              onQuickNew={(preset) => setDialog({ kind: 'new', preset })}
+              adminLabel={
+                elevation?.managerElevated
+                  ? 'All terminals'
+                  : elevation?.sudo === 'inline'
+                    ? 'Ready'
+                    : elevation?.sudo === 'unavailable'
+                      ? 'Separate window'
+                      : 'One-time setup'
+              }
               stats={stats}
               titles={titles}
             />
           )}
           <div className={`terminal-stack ${active === 'dashboard' ? 'hidden' : ''}`}>
             {tabs.map((id) => {
-              const p = profileMap.get(id);
+              const p = profileMap.get(baseProfileId(id));
               if (!p) return null;
               return (
                 <TerminalView
                   key={id}
+                  sessionKey={id}
                   profile={p}
                   active={active === id}
                   autoStart={autoStart.current.get(id) ?? true}
                   onHostState={() => setHostTick((t) => t + 1)}
                   onActivity={onActivity}
+                  onNeedsAdmin={(pid) => {
+                    if (!elevation?.managerElevated && supportsElevation(shellKind(pid))) setAdminHint(pid);
+                  }}
                   onAppShortcut={appShortcut}
                 />
               );
             })}
+            {adminHint && adminHint === active && (
+              <div className="admin-hint" role="status">
+                <Icon name="shield" size={15} />
+                <span>{t('This looks like it needs administrator rights.')}</span>
+                <button className="btn btn-sm btn-primary" onClick={() => void continueAsAdmin(adminHint)}>{t('Continue as Administrator')}</button>
+                <button className="icon-btn small" title={t('Dismiss')} onClick={() => setAdminHint(null)}><Icon name="x" size={13} /></button>
+              </div>
+            )}
             {findOpen && activeHost && <FindBar key={activeProfile?.id} host={activeHost} onClose={() => setFindOpen(false)} />}
             {zoomMsg && active !== 'dashboard' && <div className="zoom-indicator">Font size {zoomMsg}</div>}
           </div>
@@ -515,7 +694,7 @@ export function App() {
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.id)} onClose={() => setMenu(null)} />}
 
       {dialog?.kind === 'new' && (
-        <NewTerminalDialog state={state} onClose={() => setDialog(null)} onCreated={async (p: Profile) => { await refresh(); openTerminal(p.id, true); }} />
+        <NewTerminalDialog state={state} preset={dialog.preset} onClose={() => setDialog(null)} onCreated={async (p: Profile) => { await refresh(); openTerminal(p.id, true); }} />
       )}
       {dialog?.kind === 'settings' && dialogProfile && (
         <ProfileSettingsDialog
@@ -526,16 +705,16 @@ export function App() {
           onSaved={(p, needsRestart) => {
             void refresh();
             hosts.get(p.id)?.applyAppearance(p.appearance);
-            toast(needsRestart ? 'Saved. Restart the terminal to apply shell/environment changes.' : 'Saved');
+            toast(needsRestart ? t('Saved. Restart the terminal to apply shell/environment changes.') : t('Saved'));
           }}
         />
       )}
       {dialog?.kind === 'rename' && dialogProfile && (
         <PromptDialog
-          title="Rename terminal"
-          label="Name"
+          title={t('Rename terminal')}
+          label={t('Name')}
           initial={dialogProfile.name}
-          confirmLabel="Rename"
+          confirmLabel={t('Rename')}
           onClose={() => setDialog(null)}
           onSubmit={async (name) => {
             await api.renameProfile(dialogProfile.id, name);
@@ -545,45 +724,98 @@ export function App() {
       )}
       {dialog?.kind === 'delete' && dialogProfile && (
         <ConfirmDialog
-          title={`Delete "${dialogProfile.name}"?`}
+          title={t('Delete "{name}"?', { name: dialogProfile.name })}
           danger
-          confirmLabel="Delete terminal"
+          confirmLabel={t('Delete terminal')}
           message={
             <>
-              The terminal will be stopped and removed from OmniTerminal.
+              {t('The terminal will be stopped and removed from OmniTerminal.')}
               <div className="mono small muted" style={{ marginTop: 8 }}>{dialogProfile.dir}</div>
             </>
           }
-          checkbox={{ label: 'Also delete its private data (tool logins, credentials, history, logs)', defaultChecked: true }}
+          checkbox={{ label: t('Also delete its private data (tool logins, credentials, history, logs)'), defaultChecked: true }}
           onClose={() => setDialog(null)}
           onConfirm={async (deleteFiles) => {
             closeTab(dialogProfile.id);
-            await run(() => api.deleteProfile(dialogProfile.id, deleteFiles), `Deleted "${dialogProfile.name}"`);
+            await run(() => api.deleteProfile(dialogProfile.id, deleteFiles), t('Deleted "{name}"', { name: dialogProfile.name }));
           }}
         />
       )}
       {dialog?.kind === 'app-settings' && (
-        <AppSettingsDialog state={state} toast={toast} onClose={() => setDialog(null)} onExitCompletely={() => setDialog({ kind: 'exit' })} />
+        <AppSettingsDialog state={state} toast={toast} onClose={() => setDialog(null)} onSaved={() => void refresh()} onExitCompletely={() => setDialog({ kind: 'exit' })} />
+      )}
+      {dialog?.kind === 'enable-sudo' && (
+        <ConfirmDialog
+          title={t('Turn on Windows sudo?')}
+          confirmLabel={t('Turn on (Windows will ask)')}
+          message={
+            <>
+              {t('Administrator terminals use the sudo command built into Windows. Each time a terminal needs administrator rights, Windows asks you first.')}
+              <p className="muted" style={{ marginTop: 10 }}>
+                {t('This turns sudo on in inline mode, the same switch as Settings > System > For developers > Enable sudo. Windows asks for permission once to change it.')}
+              </p>
+            </>
+          }
+          onClose={() => setDialog(null)}
+          onConfirm={async () => {
+            const { id, then } = dialog;
+            const r = await bridge.enableSudo();
+            setElevation(r.status);
+            if (r.status.sudo === 'inline') {
+              toast(t('Windows sudo is on.'));
+              setTimeout(() => void (then === 'restart' ? runAsAdmin(id) : continueAsAdmin(id)), 50);
+            } else {
+              toast(t('Sudo was not turned on (the permission prompt was cancelled or declined).'), 'error');
+            }
+          }}
+        />
+      )}
+      {dialog?.kind === 'run-admin' && dialogProfile && (
+        <ConfirmDialog
+          title={t('Run "{name}" as Administrator?', { name: dialogProfile.name })}
+          confirmLabel={t('Restart as Administrator')}
+          message={
+            <>
+              {t('The terminal restarts with administrator rights. Windows asks for permission once. Programs running in it now will be stopped. It keeps the same folder, variables and accounts.')}
+              <p className="muted" style={{ marginTop: 10 }}>
+                {t('To keep what is running, use Continue as Administrator (in place) from the right-click menu.')}
+              </p>
+            </>
+          }
+          onClose={() => setDialog(null)}
+          onConfirm={() => runAsAdmin(dialog.id, true)}
+        />
+      )}
+      {dialog?.kind === 'no-sudo' && dialogProfile && (
+        <ConfirmDialog
+          title={t('Open an administrator window?')}
+          confirmLabel={t('Open administrator PowerShell')}
+          message={t("This version of Windows has no built-in sudo (it needs Windows 11 24H2 or later), so a terminal cannot switch to administrator rights in place. You can open a separate administrator PowerShell window in this terminal's folder instead. It will not have this terminal's private settings.")}
+          onClose={() => setDialog(null)}
+          onConfirm={async () => {
+            await bridge.openElevatedWindow(dialogProfile.cwd);
+          }}
+        />
       )}
       {dialog?.kind === 'stop-all' && (
         <ConfirmDialog
-          title="Stop all terminals?"
+          title={t('Stop all terminals?')}
           danger
-          confirmLabel={`Stop ${runningCount} terminal${runningCount === 1 ? '' : 's'}`}
-          message="Every running terminal and the programs inside them will be stopped. Their settings, logins and history are kept."
+          confirmLabel={runningCount === 1 ? t('Stop 1 terminal') : t('Stop {n} terminals', { n: runningCount })}
+          message={t('Every running terminal and the programs inside them will be stopped. Their settings, logins and history are kept.')}
           onClose={() => setDialog(null)}
           onConfirm={() => stopAll()}
         />
       )}
       {dialog?.kind === 'exit' && (
         <ConfirmDialog
-          title="Exit OmniTerminal completely?"
+          title={t('Exit OmniTerminal completely?')}
           danger
-          confirmLabel="Stop everything and exit"
+          confirmLabel={t('Stop everything and exit')}
           message={
             runningCount > 0
-              ? `This stops ${runningCount} running terminal${runningCount === 1 ? '' : 's'} (and every program running inside them) and shuts down the session manager.`
-              : 'This shuts down the session manager.'
+              ? t('This stops {n} running terminals, and every program inside them, and shuts down the session manager.', { n: runningCount })
+              : t('This shuts down the session manager.')
           }
           onClose={() => setDialog(null)}
           onConfirm={() => bridge.exitCompletely()}

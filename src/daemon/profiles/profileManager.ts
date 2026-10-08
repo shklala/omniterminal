@@ -149,7 +149,7 @@ export class ProfileManager {
     return {
       fontFamily: String(merged.fontFamily || DEFAULT_APPEARANCE.fontFamily).slice(0, 200),
       fontSize: clampInt(merged.fontSize, 8, 40, DEFAULT_APPEARANCE.fontSize),
-      theme: String(merged.theme || DEFAULT_APPEARANCE.theme).slice(0, 40),
+      theme: String(merged.theme || DEFAULT_APPEARANCE.theme).slice(0, 64),
       cursorStyle: ['block', 'underline', 'bar'].includes(merged.cursorStyle) ? merged.cursorStyle : 'block',
       cursorBlink: !!merged.cursorBlink,
     };

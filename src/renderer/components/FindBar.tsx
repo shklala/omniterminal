@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import type { TerminalHost } from '../terminal/terminalHost';
 import { cx } from '../util';
 import { Icon } from './Icon';
+import { t } from '../i18n';
 
 const DECORATIONS = {
-  matchBackground: '#3b4a66',
-  matchOverviewRuler: '#7aa2ff',
-  activeMatchBackground: '#d29922',
-  activeMatchColorOverviewRuler: '#d29922',
+  matchBackground: '#5c5c5c',
+  matchOverviewRuler: '#9a9a9a',
+  activeMatchBackground: '#c98a1b',
+  activeMatchColorOverviewRuler: '#fcb84a',
 };
 
 /** Ctrl+Shift+F search over the terminal buffer (scrollback included). */
@@ -67,7 +68,7 @@ export function FindBar({ host, onClose }: { host: TerminalHost; onClose: () => 
       <input
         ref={input}
         value={query}
-        placeholder="Find in terminal"
+        placeholder={t('Find in terminal')}
         spellCheck={false}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={(e) => {
@@ -75,9 +76,9 @@ export function FindBar({ host, onClose }: { host: TerminalHost; onClose: () => 
           if (e.key === 'Escape') close();
         }}
       />
-      <span className="find-count">{result ? (result.count ? `${result.index + 1}/${result.count}` : 'No results') : ''}</span>
-      <button className={cx('find-toggle', caseSensitive && 'on')} title="Match case" onClick={() => setCaseSensitive((v) => !v)}>Aa</button>
-      <button className={cx('find-toggle', regex && 'on')} title="Regular expression" onClick={() => setRegex((v) => !v)}>.*</button>
+      <span className="find-count">{result ? (result.count ? `${result.index + 1}/${result.count}` : t('No results')) : ''}</span>
+      <button className={cx('find-toggle', caseSensitive && 'on')} title={t('Match case')} onClick={() => setCaseSensitive((v) => !v)}>Aa</button>
+      <button className={cx('find-toggle', regex && 'on')} title={t('Regular expression')} onClick={() => setRegex((v) => !v)}>.*</button>
       <button className="icon-btn small" title="Previous (Shift+Enter)" onClick={() => find('prev')}>↑</button>
       <button className="icon-btn small" title="Next (Enter)" onClick={() => find('next')}>↓</button>
       <button className="icon-btn small" title="Close (Esc)" onClick={close}><Icon name="x" size={13} /></button>

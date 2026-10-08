@@ -6,8 +6,8 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { SearchAddon } from '@xterm/addon-search';
 import type { Appearance } from '../../shared/types';
 import { api, bridge, errorMessage } from '../api';
-import { getTheme } from '../themes';
-import { cleanTitle } from '../util';
+import { findCustomTheme, getTheme } from '../themes';
+import { cleanTitle, looksLikeAdminNeeded } from '../util';
 
 export type HostState = 'connecting' | 'attached' | 'exited' | 'error' | 'detached';
 /** Unseen activity in a background tab: new output, or the program rang the bell (wants attention). */
@@ -26,6 +26,7 @@ export class TerminalHost {
   private readonly fit = new FitAddon();
   readonly search = new SearchAddon();
   private webgl: WebglAddon | null = null;
+  private webglFailed = false;
   private opened = false;
   private sessionId: string | null = null;
   private resizeTimer: number | null = null;
@@ -38,14 +39,20 @@ export class TerminalHost {
   title = '';
   private visible = false;
   private baseFontSize: number;
+  private parentEl: HTMLElement | null = null;
+  private appearance: Appearance;
   onStateChange: (s: HostState) => void = () => undefined;
   /** Fired when activity or title changes (for indicators and notifications). */
   onActivity: (a: Activity) => void = () => undefined;
+  /** Fired (at most once a minute) when output suggests the command needs administrator rights. */
+  onNeedsAdmin: () => void = () => undefined;
+  private lastAdminHint = 0;
   /** Global shortcuts handled by the app (returns true if consumed). */
   onAppShortcut: (e: KeyboardEvent) => boolean = () => false;
 
-  constructor(readonly profileId: string, appearance: Appearance) {
+  constructor(readonly profileId: string, appearance: Appearance, scrollback = 5000) {
     this.baseFontSize = appearance.fontSize;
+    this.appearance = appearance;
     this.el = document.createElement('div');
     this.el.className = 'xterm-host';
     this.term = new Terminal({
@@ -54,12 +61,13 @@ export class TerminalHost {
       fontSize: appearance.fontSize,
       cursorStyle: appearance.cursorStyle,
       cursorBlink: appearance.cursorBlink,
-      theme: getTheme(appearance.theme),
-      scrollback: 10000,
+      theme: terminalTheme(appearance.theme),
+      // The session manager keeps the authoritative scrollback; the view never needs more.
+      scrollback,
       macOptionIsMeta: true,
       rightClickSelectsWord: false,
       windowsPty: { backend: 'conpty' },
-      allowTransparency: false,
+      allowTransparency: true,
       drawBoldTextInBrightColors: true,
       minimumContrastRatio: 1,
     });
@@ -148,27 +156,51 @@ export class TerminalHost {
 
   mount(parent: HTMLElement): void {
     if (this.el.parentElement !== parent) parent.appendChild(this.el);
+    if (this.parentEl !== parent) {
+      this.parentEl = parent;
+      void this.paintBackground();
+    }
     if (!this.opened) {
       this.term.open(this.el);
       this.opened = true;
-      try {
-        this.webgl = new WebglAddon();
-        this.webgl.onContextLoss(() => {
-          this.webgl?.dispose();
-          this.webgl = null;
-        });
-        this.term.loadAddon(this.webgl);
-      } catch {
-        this.webgl = null; // DOM renderer fallback
-      }
+      if (this.visible) this.enableWebgl();
       this.observer = new ResizeObserver(() => this.scheduleFit());
       this.observer.observe(this.el);
     }
   }
 
+  /**
+   * GPU rendering only for the tab on screen. Each WebGL context holds its own glyph atlas and GPU
+   * buffers (and Chromium caps live contexts at ~16), so hidden tabs fall back to the cheap DOM
+   * renderer and get WebGL back when shown.
+   */
+  private enableWebgl(): void {
+    if (this.webgl || !this.opened || this.webglFailed) return;
+    try {
+      const addon = new WebglAddon();
+      addon.onContextLoss(() => this.disableWebgl());
+      this.term.loadAddon(addon);
+      this.webgl = addon;
+    } catch {
+      this.webglFailed = true; // DOM renderer fallback
+    }
+  }
+
+  private disableWebgl(): void {
+    if (!this.webgl) return;
+    try {
+      this.webgl.dispose();
+    } catch {
+      /* already disposed */
+    }
+    this.webgl = null;
+  }
+
   /** Called when the tab becomes visible/hidden; visible tabs never show activity markers. */
   setVisible(visible: boolean): void {
     this.visible = visible;
+    if (visible) this.enableWebgl();
+    else this.disableWebgl();
     if (visible && this.activity !== 'none') {
       this.activity = 'none';
       this.onActivity('none');
@@ -194,13 +226,43 @@ export class TerminalHost {
     this.scheduleFit();
   }
 
+  /**
+   * Paints the area behind the terminal: the theme colour, or for custom themes with a picture,
+   * the picture with the theme colour layered on top (so imageOpacity controls how visible it is).
+   */
+  private async paintBackground(): Promise<void> {
+    const el = this.parentEl;
+    if (!el) return;
+    const custom = findCustomTheme(this.appearance.theme);
+    const bg = custom?.colors.background ?? (getTheme(this.appearance.theme).background as string) ?? '#181818';
+    el.style.backgroundColor = bg;
+    if (!custom?.backgroundImage) {
+      el.style.backgroundImage = '';
+      return;
+    }
+    const url = await themeImage(custom.backgroundImage);
+    if (!url || this.parentEl !== el || findCustomTheme(this.appearance.theme)?.id !== custom.id) return;
+    const veil = hexToRgba(bg, 1 - custom.imageOpacity);
+    el.style.backgroundImage = `linear-gradient(${veil}, ${veil}), url("${url}")`;
+    el.style.backgroundRepeat = custom.imageFit === 'tile' ? 'repeat' : 'no-repeat';
+    el.style.backgroundSize = custom.imageFit === 'tile' ? 'auto, auto' : `100% 100%, ${custom.imageFit}`;
+    el.style.backgroundPosition = 'center';
+  }
+
+  /** Re-applies the current theme (after a custom theme was edited). */
+  refreshTheme(): void {
+    this.applyAppearance(this.appearance);
+  }
+
   applyAppearance(a: Appearance): void {
+    this.appearance = a;
+    void this.paintBackground();
     this.baseFontSize = a.fontSize;
     this.term.options.fontFamily = a.fontFamily;
     this.term.options.fontSize = a.fontSize;
     this.term.options.cursorStyle = a.cursorStyle;
     this.term.options.cursorBlink = a.cursorBlink;
-    this.term.options.theme = getTheme(a.theme);
+    this.term.options.theme = terminalTheme(a.theme);
     this.scheduleFit();
   }
 
@@ -262,10 +324,11 @@ export class TerminalHost {
     await this.connect(true);
   }
 
-  async restartSession(): Promise<void> {
+  /** Restarts the shell; with `elevated`, through Windows sudo so it runs as administrator. */
+  async restartSession(elevated = false): Promise<void> {
     this.setState('connecting');
     try {
-      await api.restart(this.profileId, this.term.cols, this.term.rows);
+      await api.restart(this.profileId, this.term.cols, this.term.rows, elevated);
     } catch (e) {
       this.term.write(`\r\n\x1b[31m[restart failed: ${errorMessage(e)}]${RESET}\r\n`);
     }
@@ -277,6 +340,10 @@ export class TerminalHost {
     if (this.state !== 'attached' || sessionId !== this.sessionId) return;
     this.term.write(data);
     this.markActivity('output');
+    if (Date.now() - this.lastAdminHint > 60_000 && data.length < 64_000 && looksLikeAdminNeeded(data)) {
+      this.lastAdminHint = Date.now();
+      this.onNeedsAdmin();
+    }
   }
 
   handleExit(sessionId: string, exitCode: number | null): void {
@@ -313,3 +380,25 @@ export class TerminalHost {
 }
 
 export const hosts = new Map<string, TerminalHost>();
+
+/** xterm theme; when the theme has a background picture the canvas is transparent so it shows through. */
+function terminalTheme(id: string) {
+  const theme = getTheme(id);
+  return findCustomTheme(id)?.backgroundImage ? { ...theme, background: '#00000000' } : theme;
+}
+
+const imageCache = new Map<string, Promise<string | null>>();
+function themeImage(name: string): Promise<string | null> {
+  let p = imageCache.get(name);
+  if (!p) {
+    p = bridge.themeImageUrl(name).catch(() => null);
+    imageCache.set(name, p);
+  }
+  return p;
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex);
+  if (!m) return `rgba(0, 0, 0, ${alpha})`;
+  return `rgba(${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}, ${Math.max(0, Math.min(1, alpha))})`;
+}

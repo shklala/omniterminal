@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon } from './Icon';
+import { t } from '../i18n';
+
+let dialogSeq = 0;
+const openDialogs: number[] = [];
 
 export function Dialog({
   title,
@@ -16,9 +20,18 @@ export function Dialog({
   footer?: ReactNode;
   wide?: boolean;
 }) {
+  // Escape closes only the topmost dialog (the theme editor opens on top of settings).
+  const idRef = useRef(++dialogSeq);
+  useEffect(() => {
+    const id = idRef.current;
+    openDialogs.push(id);
+    return () => {
+      openDialogs.splice(openDialogs.indexOf(id), 1);
+    };
+  }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && openDialogs[openDialogs.length - 1] === idRef.current) onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -68,7 +81,7 @@ export function ConfirmDialog({
       onClose={onClose}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn" onClick={onClose}>{t('Cancel')}</button>
           <button
             className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`}
             disabled={busy}
@@ -134,7 +147,7 @@ export function PromptDialog({
       onClose={onClose}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn" onClick={onClose}>{t('Cancel')}</button>
           <button className="btn btn-primary" onClick={submit}>{confirmLabel}</button>
         </>
       }

@@ -1,13 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { DEFAULT_APPEARANCE, PROFILE_COLORS } from '../../shared/defaults';
-import { isToolEnabled } from '../../shared/tools';
-import type { AppState, CustomMapping, Profile, ProfileInput, SessionInfo } from '../../shared/types';
+import { TOOL_GROUPS, isToolEnabled } from '../../shared/tools';
+import type { ToolDefinition } from '../../shared/types';
+import type { AppState, CustomMapping, CustomTheme, Profile, ProfileInput, SessionInfo } from '../../shared/types';
 import { api, bridge, errorMessage } from '../api';
-import { THEMES } from '../themes';
+import { THEMES, findCustomTheme, getCustomThemes, getTheme, setCustomThemes } from '../themes';
+import { ThemeEditor } from './ThemeEditor';
 import { cx, fmtDateFull, nextDefaultName } from '../util';
 import { Dialog } from './Dialog';
 import { EnvEditor, rowsToEnv, toRows, type EnvRow } from './EnvEditor';
 import { Icon } from './Icon';
+import { t as tr } from '../i18n';
 
 interface GeneralValues {
   name: string;
@@ -23,44 +26,44 @@ function GeneralFields({ values, onChange, state, autoFocus }: { values: General
   return (
     <div className="form-grid">
       <label className="field">
-        <span>Name</span>
-        <input autoFocus={autoFocus} value={values.name} maxLength={64} onChange={(e) => onChange({ name: e.target.value })} placeholder="e.g. Claude Account 03" />
+        <span>{tr('Name')}</span>
+        <input autoFocus={autoFocus} value={values.name} maxLength={64} onChange={(e) => onChange({ name: e.target.value })} placeholder={tr('e.g. Claude Account 03')} />
       </label>
       <label className="field">
-        <span>Working directory</span>
+        <span>{tr('Working directory')}</span>
         <div className="input-with-btn">
-          <input value={values.cwd} onChange={(e) => onChange({ cwd: e.target.value })} placeholder="Default: your user folder" spellCheck={false} />
+          <input value={values.cwd} onChange={(e) => onChange({ cwd: e.target.value })} placeholder={tr('Default: your user folder')} spellCheck={false} />
           <button className="btn" type="button" onClick={async () => {
             const dir = await bridge.pickDirectory(values.cwd || undefined);
             if (dir) onChange({ cwd: dir });
           }}>
-            <Icon name="folder" size={14} /> Browse
+            <Icon name="folder" size={14} /> {tr('Browse')}
           </button>
         </div>
       </label>
       <label className="field">
-        <span>Shell</span>
+        <span>{tr('Shell')}</span>
         <select value={values.shellId} onChange={(e) => onChange({ shellId: e.target.value })}>
           {state.shells.map((s) => (
             <option key={s.id} value={s.id}>{s.label}</option>
           ))}
-          <option value="custom">Custom executable…</option>
+          <option value="custom">{tr('Custom executable…')}</option>
         </select>
       </label>
       {values.shellId === 'custom' && (
         <label className="field">
-          <span>Shell executable</span>
+          <span>{tr('Shell executable')}</span>
           <div className="input-with-btn">
             <input value={values.shellPath} onChange={(e) => onChange({ shellPath: e.target.value })} placeholder="C:\path\to\shell.exe" spellCheck={false} />
             <button className="btn" type="button" onClick={async () => {
               const f = await bridge.pickFile('Choose shell executable');
               if (f) onChange({ shellPath: f });
-            }}>Browse</button>
+            }}>{tr('Browse')}</button>
           </div>
         </label>
       )}
       <label className="field">
-        <span>Startup command <em>optional</em></span>
+        <span>{tr('Startup command')} <em>{tr('optional')}</em></span>
         <input value={values.startupCommand} onChange={(e) => onChange({ startupCommand: e.target.value })} placeholder="e.g. claude" spellCheck={false} />
         <div className="presets">
           {['claude', 'claude --continue', 'codex', 'npm run dev', 'supabase start', 'gcloud auth list'].map((c) => (
@@ -71,7 +74,7 @@ function GeneralFields({ values, onChange, state, autoFocus }: { values: General
         </div>
       </label>
       <div className="field">
-        <span>Color</span>
+        <span>{tr('Color')}</span>
         <div className="swatches">
           {PROFILE_COLORS.map((c) => (
             <button key={c} type="button" className={cx('swatch', values.color === c && 'selected')} style={{ background: c }} onClick={() => onChange({ color: c })} aria-label={`Color ${c}`} />
@@ -82,15 +85,31 @@ function GeneralFields({ values, onChange, state, autoFocus }: { values: General
   );
 }
 
-export function NewTerminalDialog({ state, onClose, onCreated }: { state: AppState; onClose: () => void; onCreated: (p: Profile) => void }) {
+export interface NewTerminalPreset {
+  name?: string;
+  shellId?: string;
+  startupCommand?: string;
+}
+
+export function NewTerminalDialog({
+  state,
+  onClose,
+  onCreated,
+  preset,
+}: {
+  state: AppState;
+  onClose: () => void;
+  onCreated: (p: Profile) => void;
+  preset?: NewTerminalPreset;
+}) {
   const defaultShell = state.shells.some((s) => s.id === state.settings.defaultShellId) ? state.settings.defaultShellId : state.shells[0]?.id ?? 'powershell';
   const [values, setValues] = useState<GeneralValues>({
-    name: nextDefaultName(state.profiles),
+    name: preset?.name ? uniqueLocalName(preset.name, state.profiles) : nextDefaultName(state.profiles),
     description: '',
     cwd: state.settings.defaultCwd,
-    shellId: defaultShell,
+    shellId: preset?.shellId && state.shells.some((s) => s.id === preset.shellId) ? preset.shellId : defaultShell,
     shellPath: '',
-    startupCommand: '',
+    startupCommand: preset?.startupCommand ?? '',
     color: PROFILE_COLORS[state.profiles.length % PROFILE_COLORS.length],
   });
   const [env, setEnv] = useState<EnvRow[]>([]);
@@ -115,14 +134,14 @@ export function NewTerminalDialog({ state, onClose, onCreated }: { state: AppSta
 
   return (
     <Dialog
-      title="New Terminal"
-      subtitle="Each terminal is an independent environment with its own config, credentials and history."
+      title={tr('New Terminal')}
+      subtitle={tr('Each terminal is an independent environment with its own config, credentials and history.')}
       onClose={onClose}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn" onClick={onClose}>{tr('Cancel')}</button>
           <button className="btn btn-primary" disabled={busy} onClick={create}>
-            <Icon name="play" size={14} /> Create &amp; Launch
+            <Icon name="play" size={14} /> {tr('Create & Launch')}
           </button>
         </>
       }
@@ -132,19 +151,26 @@ export function NewTerminalDialog({ state, onClose, onCreated }: { state: AppSta
         <button type="submit" hidden />
       </form>
       <div className="section-toggle" onClick={() => setShowEnv((s) => !s)}>
-        <span className={cx('chevron', showEnv && 'open')}>›</span> Environment variables <em>optional</em>
+        <span className={cx('chevron', showEnv && 'open')}>›</span> {tr('Environment variables')} <em>{tr('optional')}</em>
         {env.length > 0 && <span className="pill">{env.length}</span>}
       </div>
       {showEnv && <EnvEditor rows={env} onChange={setEnv} />}
       <p className="hint">
-        <Icon name="shield" size={13} /> Claude Code, gcloud, GitHub CLI, Git and other tools get private config folders automatically — no manual setup.
+        <Icon name="shield" size={13} /> {tr('Claude Code, gcloud, GitHub CLI, Git and other tools get their own config folders automatically.')}
       </p>
       {error && <div className="form-error">{error}</div>}
     </Dialog>
   );
 }
 
+function uniqueLocalName(base: string, profiles: Profile[]): string {
+  const taken = new Set(profiles.map((p) => p.name.toLowerCase()));
+  if (!taken.has(base.toLowerCase())) return base;
+  for (let i = 2; ; i++) if (!taken.has(`${base} ${i}`.toLowerCase())) return `${base} ${i}`;
+}
+
 type Tab = 'general' | 'environment' | 'tools' | 'appearance' | 'advanced';
+const TAB_LABELS: Record<Tab, string> = { general: 'General', environment: 'Environment', tools: 'Tools', appearance: 'Appearance', advanced: 'Advanced' };
 
 export function ProfileSettingsDialog({
   state,
@@ -177,6 +203,7 @@ export function ProfileSettingsDialog({
   const [unsetText, setUnsetText] = useState(profile.advanced.unsetVars.join(', '));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [toolQuery, setToolQuery] = useState('');
 
   const running = session?.state === 'running';
   const sep = profile.dir.includes('\\') ? '\\' : '/';
@@ -214,20 +241,25 @@ export function ProfileSettingsDialog({
     }
   };
 
-  const cliTools = state.tools.filter((t) => t.category === 'cli');
-  const historyTools = state.tools.filter((t) => t.category === 'history');
+  const q = toolQuery.trim().toLowerCase();
+  const toolMatches = (t: ToolDefinition) =>
+    !q ||
+    [t.name, t.notes, ...t.mappings.map((m) => m.envVar), ...(t.tokenVars ?? []).map((v) => v.envVar)].some((f) => f.toLowerCase().includes(q));
+  const groupedTools = TOOL_GROUPS.map((g) => ({ ...g, tools: state.tools.filter((t) => (t.group ?? 'code') === g.id && toolMatches(t)) })).filter(
+    (g) => g.tools.length > 0,
+  );
 
   return (
     <Dialog
       wide
-      title={`${profile.name} — Settings`}
+      title={tr('{name} settings', { name: profile.name })}
       subtitle={<span className="mono small">{profile.dir}</span>}
       onClose={onClose}
       footer={
         <>
-          {running && <span className="footer-note">Changes to shell/environment apply after Restart.</span>}
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={busy} onClick={save}>Save</button>
+          {running && <span className="footer-note">{tr('Changes to shell/environment apply after Restart.')}</span>}
+          <button className="btn" onClick={onClose}>{tr('Cancel')}</button>
+          <button className="btn btn-primary" disabled={busy} onClick={save}>{tr('Save')}</button>
         </>
       }
     >
@@ -235,7 +267,7 @@ export function ProfileSettingsDialog({
         <nav className="settings-nav">
           {(['general', 'environment', 'tools', 'appearance', 'advanced'] as Tab[]).map((t) => (
             <button key={t} className={cx('settings-nav-item', tab === t && 'active')} onClick={() => setTab(t)}>
-              {t[0].toUpperCase() + t.slice(1)}
+              {tr(TAB_LABELS[t])}
             </button>
           ))}
         </nav>
@@ -244,7 +276,7 @@ export function ProfileSettingsDialog({
             <>
               <GeneralFields values={general} onChange={(v) => setGeneral((s) => ({ ...s, ...v }))} state={state} />
               <label className="field">
-                <span>Notes / description</span>
+                <span>{tr('Notes / description')}</span>
                 <textarea rows={3} value={general.description} onChange={(e) => setGeneral((s) => ({ ...s, description: e.target.value }))} placeholder="What is this terminal for?" />
               </label>
             </>
@@ -262,9 +294,23 @@ export function ProfileSettingsDialog({
 
           {tab === 'tools' && (
             <>
-              <p className="hint">Each enabled tool is redirected to a private folder inside this terminal's profile. Logging in here never affects other terminals for tools marked <b>Full</b>.</p>
+              <p className="hint">
+                Tools with a switch get their own folder inside this terminal, so signing in here does not touch your other
+                terminals. Tools without one share their login, so give this terminal its own token instead.
+              </p>
+              <div className="tool-filter">
+                <div className="search-box">
+                  <Icon name="search" size={14} />
+                  <input placeholder={tr('Search tools or variables')} value={toolQuery} onChange={(e) => setToolQuery(e.target.value)} spellCheck={false} />
+                </div>
+                <span className="muted small">{tr('{n} tools', { n: state.tools.length })}</span>
+              </div>
+              {groupedTools.length === 0 && <p className="hint">No tool matches "{toolQuery}". You can still add a custom mapping below.</p>}
+              {groupedTools.map((g) => (
+              <div key={g.id}>
+              <h4 className="tool-group">{tr(g.label)}</h4>
               <div className="tool-list">
-                {cliTools.concat(historyTools).map((t) => {
+                {g.tools.map((t) => {
                   const enabled = t.mappings.length === 0 || isToolEnabled(tools, t);
                   const tokenSet = (t.tokenVars ?? []).some((tv) => env.some((r) => r.name === tv.envVar && (r.value || r.hasValue)));
                   const level = tokenSet ? 'full' : t.isolation;
@@ -279,7 +325,7 @@ export function ProfileSettingsDialog({
                         )}
                         <span className="tool-name">{t.name}</span>
                         <span className={cx('badge', `iso-${level}`)}>
-                          {tokenSet ? 'Isolated (token)' : level === 'full' ? 'Full isolation' : level === 'partial' ? 'Partial' : 'Shared'}
+                          {tr(tokenSet ? 'Own token' : level === 'full' ? 'Separate' : level === 'partial' ? 'Shared login' : 'Shared')}
                         </span>
                       </div>
                       {t.mappings.map((m) => (
@@ -291,13 +337,15 @@ export function ProfileSettingsDialog({
                       {(t.tokenVars ?? []).map((tv) => (
                         <TokenField key={tv.envVar} tokenVar={tv} rows={env} onChange={setEnv} />
                       ))}
-                      {t.whoami && <div className="tool-whoami">Check the active account: <code>{t.whoami}</code></div>}
+                      {t.whoami && <div className="tool-whoami">Check which account is active: <code>{t.whoami}</code></div>}
                     </div>
                   );
                 })}
               </div>
+              </div>
+              ))}
 
-              <h3 className="subhead">Custom config mappings</h3>
+              <h3 className="subhead">{tr('Custom config mappings')}</h3>
               <p className="hint">Point any CLI's config variable at this terminal (relative paths live inside the profile folder).</p>
               <div className="mapping-editor">
                 {mappings.map((m, i) => (
@@ -318,7 +366,7 @@ export function ProfileSettingsDialog({
                 </button>
               </div>
 
-              <h3 className="subhead">Known limitations</h3>
+              <h3 className="subhead">{tr('Known limitations')}</h3>
               <div className="limitations">
                 {state.limitations.map((l) => (
                   <div key={l.id} className="limitation">
@@ -413,7 +461,7 @@ function TokenField({ tokenVar, rows, onChange }: { tokenVar: { envVar: string; 
           type="password"
           autoComplete="off"
           spellCheck={false}
-          placeholder={row?.hasValue ? '•••••••• stored — type to replace' : 'paste token'}
+          placeholder={row?.hasValue ? 'Saved. Type to replace it' : 'Paste token'}
           value={row?.value ?? ''}
           onChange={(e) => setValue(e.target.value)}
         />
@@ -429,43 +477,78 @@ function TokenField({ tokenVar, rows, onChange }: { tokenVar: { envVar: string; 
 }
 
 export function AppearanceFields({ value, onChange }: { value: Profile['appearance']; onChange: (v: Profile['appearance']) => void }) {
-  const preview = useMemo(() => THEMES.find((t) => t.id === value.theme)?.theme ?? THEMES[0].theme, [value.theme]);
+  const [editor, setEditor] = useState<{ theme: CustomTheme | null } | null>(null);
+  const custom = getCustomThemes();
+  const current = findCustomTheme(value.theme);
+  const preview = getTheme(value.theme);
   return (
     <div className="form-grid">
       <label className="field">
-        <span>Font family</span>
+        <span>{tr('Font family')}</span>
         <input value={value.fontFamily} onChange={(e) => onChange({ ...value, fontFamily: e.target.value })} spellCheck={false} />
       </label>
       <label className="field">
-        <span>Font size</span>
+        <span>{tr('Font size')}</span>
         <input type="number" min={8} max={40} value={value.fontSize} onChange={(e) => onChange({ ...value, fontSize: Number(e.target.value) })} />
       </label>
+      <div className="field">
+        <span>{tr('Terminal theme')}</span>
+        <div className="input-with-btn">
+          <select value={value.theme} onChange={(e) => onChange({ ...value, theme: e.target.value })} style={{ flex: 1 }}>
+            <optgroup label={tr('Built-in')}>
+              {THEMES.map((th) => <option key={th.id} value={th.id}>{th.label}</option>)}
+            </optgroup>
+            {custom.length > 0 && (
+              <optgroup label={tr('My themes')}>
+                {custom.map((th) => <option key={th.id} value={th.id}>{th.name}</option>)}
+              </optgroup>
+            )}
+          </select>
+          {current && (
+            <button className="btn" type="button" onClick={() => setEditor({ theme: current })}>
+              <Icon name="edit" size={14} /> {tr('Edit')}
+            </button>
+          )}
+          <button className="btn" type="button" onClick={() => setEditor({ theme: null })}>
+            <Icon name="plus" size={14} /> {tr('New theme')}
+          </button>
+        </div>
+      </div>
       <label className="field">
-        <span>Theme</span>
-        <select value={value.theme} onChange={(e) => onChange({ ...value, theme: e.target.value })}>
-          {THEMES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-        </select>
-      </label>
-      <label className="field">
-        <span>Cursor</span>
+        <span>{tr('Cursor')}</span>
         <div className="inline">
           <select value={value.cursorStyle} onChange={(e) => onChange({ ...value, cursorStyle: e.target.value as 'block' | 'bar' | 'underline' })}>
-            <option value="block">Block</option>
-            <option value="bar">Bar</option>
-            <option value="underline">Underline</option>
+            <option value="block">{tr('Block')}</option>
+            <option value="bar">{tr('Bar')}</option>
+            <option value="underline">{tr('Underline')}</option>
           </select>
           <label className="check compact">
             <input type="checkbox" checked={value.cursorBlink} onChange={(e) => onChange({ ...value, cursorBlink: e.target.checked })} />
-            <span>Blink</span>
+            <span>{tr('Blink')}</span>
           </label>
         </div>
       </label>
-      <div className="theme-preview" style={{ background: preview.background, color: preview.foreground, fontFamily: value.fontFamily, fontSize: value.fontSize }}>
+      <div className="theme-preview" style={{ background: current?.colors.background ?? preview.background, color: preview.foreground, fontFamily: value.fontFamily, fontSize: value.fontSize }}>
         <span style={{ color: preview.green }}>user@omni</span>:<span style={{ color: preview.blue }}>~/project</span>$ git status{'\n'}
         <span style={{ color: preview.red }}>modified:</span> src/app.ts{'\n'}
         <span style={{ color: preview.yellow }}>warning</span> <span style={{ color: preview.magenta }}>3 packages</span> <span style={{ color: preview.cyan }}>outdated</span>
       </div>
-      <button className="btn btn-ghost" onClick={() => onChange({ ...DEFAULT_APPEARANCE })}>Reset to defaults</button>
+      <button className="btn btn-ghost" onClick={() => onChange({ ...DEFAULT_APPEARANCE })}>{tr('Reset to defaults')}</button>
+      {editor && (
+        <ThemeEditor
+          theme={editor.theme}
+          startFrom={value.theme}
+          onClose={() => setEditor(null)}
+          onSaved={(saved) => {
+            setCustomThemes([...getCustomThemes().filter((x) => x.id !== saved.id), saved]);
+            onChange({ ...value, theme: saved.id });
+          }}
+          onDeleted={() => {
+            if (editor.theme) setCustomThemes(getCustomThemes().filter((x) => x.id !== editor.theme!.id));
+            onChange({ ...value, theme: DEFAULT_APPEARANCE.theme });
+          }}
+        />
+      )}
     </div>
   );
 }

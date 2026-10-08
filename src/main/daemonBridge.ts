@@ -24,7 +24,9 @@ export class DaemonBridge extends EventEmitter {
     const daemonScript = path.join(appDir, 'dist', 'daemon.js');
     return {
       execPath,
-      args: [daemonScript],
+      // A small young generation keeps this long-running background process lean
+      // (V8's default semi-space is sized for throughput, not footprint).
+      args: ['--max-semi-space-size=2', daemonScript],
       env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', OMNITERMINAL_DAEMON: '1' },
     };
   }

@@ -87,7 +87,12 @@ export type SessionState = 'running' | 'exited';
 
 export interface SessionInfo {
   sessionId: string;
+  /** Session key: the profile id, or "<profileId>~N" for extra shells of the same terminal. */
+  key: string;
+  /** The terminal (profile) this shell belongs to. */
   profileId: string;
+  /** 1 for the terminal's first shell, 2+ for shells opened with "Open another". */
+  instance: number;
   pid: number;
   state: SessionState;
   exitCode: number | null;
@@ -97,6 +102,8 @@ export interface SessionInfo {
   rows: number;
   /** Number of GUI clients currently attached. */
   attachedClients: number;
+  /** Started with administrator rights ("Run as Administrator", via Windows sudo). */
+  elevated: boolean;
   shellId: string;
   title: string;
 }
@@ -107,6 +114,14 @@ export interface AppSettings {
   defaultShellId: string;
   defaultCwd: string;
   confirmOnExitCompletely: boolean;
+  /** 'system' follows the Windows light/dark setting. */
+  uiTheme: string;
+  /** UI language code ('en', 'ar'). */
+  language: string;
+  /** Restart terminals that were still running when Windows (or the session manager) went down. */
+  restoreAfterRestart: boolean;
+  /** PowerShell: suggestions from history (and plugins) while typing, shown as a list. */
+  suggestions: boolean;
 }
 
 export type IsolationLevel = 'full' | 'partial' | 'shared';
@@ -120,10 +135,13 @@ export interface ToolEnvMapping {
   value?: string;
 }
 
+export type ToolGroup = 'ai' | 'code' | 'cloud' | 'deploy' | 'services' | 'packages' | 'data' | 'history';
+
 export interface ToolDefinition {
   id: string;
   name: string;
   category: 'cli' | 'history';
+  group?: ToolGroup;
   mappings: ToolEnvMapping[];
   isolation: IsolationLevel;
   notes: string;
@@ -144,6 +162,27 @@ export interface DaemonInfo {
   home: string;
 }
 
+/** The 20 terminal colours a theme defines (hex, #rrggbb). */
+export const THEME_COLOR_KEYS = [
+  'background', 'foreground', 'cursor', 'selectionBackground',
+  'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
+  'brightBlack', 'brightRed', 'brightGreen', 'brightYellow', 'brightBlue', 'brightMagenta', 'brightCyan', 'brightWhite',
+] as const;
+export type ThemeColorKey = (typeof THEME_COLOR_KEYS)[number];
+
+/** A terminal theme the user made in the theme editor. Usable by every terminal. */
+export interface CustomTheme {
+  /** "custom:<uuid>" */
+  id: string;
+  name: string;
+  colors: Record<ThemeColorKey, string>;
+  /** Image file name inside %LOCALAPPDATA%\OmniTerminal\themes, or '' for none. */
+  backgroundImage: string;
+  /** How visible the image is, 0..1 (the rest is the background colour on top). */
+  imageOpacity: number;
+  imageFit: 'cover' | 'contain' | 'tile';
+}
+
 export interface AppState {
   daemon: DaemonInfo;
   profiles: Profile[];
@@ -152,6 +191,7 @@ export interface AppState {
   tools: ToolDefinition[];
   limitations: ToolDefinition[];
   settings: AppSettings;
+  customThemes: CustomTheme[];
 }
 
 export interface ExportedProfile {

@@ -16,7 +16,7 @@ const paths = getAppPaths({ ...process.env, OMNITERMINAL_HOME: home });
 const spec: SpawnSpec = {
   execPath: process.execPath,
   args: [daemonJs],
-  env: { ...process.env, OMNITERMINAL_HOME: home, OMNITERMINAL_IDLE_EXIT_MS: '600000' },
+  env: { ...process.env, OMNITERMINAL_HOME: home, OMNITERMINAL_IDLE_EXIT_MS: '600000', OMNITERMINAL_SNAPSHOT_MS: '500' },
 };
 const clients: DaemonClient[] = [];
 
@@ -38,7 +38,7 @@ beforeAll(async () => {
     platform: 'node',
     format: 'cjs',
     target: 'node22',
-    external: ['node-pty', 'sql.js', '@xterm/headless', '@xterm/addon-serialize'],
+    external: ['node-pty'],
     logLevel: 'silent',
   });
 });
@@ -165,12 +165,13 @@ describe('session manager process (named pipe)', () => {
     expect(fs.existsSync(paths.daemonInfo)).toBe(false);
   });
 
-  it('after a session-manager crash, orphan records are cleaned up and profiles survive', async () => {
+  it('after a crash or Windows restart: leftovers are cleaned up, then running terminals come back with their output', async () => {
     const { client, spawned } = await gui();
     expect(spawned).toBe(true);
     const p = await client.call<Profile>('profiles.create', { profile: { name: 'Crashy', shellId: 'cmd' } });
     const info = await client.call<SessionInfo>('sessions.start', { profileId: p.id });
-    await new Promise((r) => setTimeout(r, 2500)); // let pid start time be recorded
+    client.notify('sessions.write', { profileId: p.id, data: 'echo BEFORE_RESTART_MARKER\r' });
+    await new Promise((r) => setTimeout(r, 2500)); // pid start time recorded + screen snapshot saved
     const daemonPid = client.hello!.pid;
     process.kill(daemonPid); // hard kill: simulates a crash
     await waitFor(() => !client.connected, 10000);
@@ -187,13 +188,21 @@ describe('session manager process (named pipe)', () => {
     expect(respawned).toBe(true);
     const state = await c2.call<AppState>('app.getState');
     expect(state.profiles.map((x) => x.name)).toEqual(expect.arrayContaining(['Claude-01', 'Terminal 02', 'Crashy']));
-    expect(state.sessions).toHaveLength(0);
     let alive = true;
     try {
       process.kill(info.pid, 0);
     } catch {
       alive = false;
     }
-    expect(alive).toBe(false);
+    expect(alive).toBe(false); // the old shell was cleaned up
+
+    // Only the terminal that was running is reopened (the others were stopped on purpose by "Exit completely").
+    expect(state.sessions.map((s) => s.profileId)).toEqual([p.id]);
+    const restored = state.sessions[0];
+    expect(restored.state).toBe('running');
+    expect(restored.sessionId).not.toBe(info.sessionId);
+    const att = await c2.call<{ snapshot: string }>('sessions.attach', { profileId: p.id, autoStart: false });
+    expect(att.snapshot).toContain('BEFORE_RESTART_MARKER');
+    expect(att.snapshot).toContain('Restored after restart');
   });
 });

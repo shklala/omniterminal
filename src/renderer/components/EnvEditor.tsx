@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { EnvVar } from '../../shared/types';
 import { Icon } from './Icon';
+import { t } from '../i18n';
 
 export interface EnvRow extends EnvVar {
   key: number;
@@ -24,9 +25,9 @@ export function EnvEditor({ rows, onChange }: { rows: EnvRow[]; onChange: (rows:
     <div className="env-editor">
       {rows.length > 0 && (
         <div className="env-row env-head">
-          <span>Name</span>
-          <span>Value</span>
-          <span title="Secret values are encrypted with Windows DPAPI and never shown again">Secret</span>
+          <span>{t('Name')}</span>
+          <span>{t('Value')}</span>
+          <span title="Secret values are encrypted with Windows DPAPI and never shown again">{t('Secret')}</span>
           <span />
         </div>
       )}
@@ -74,7 +75,7 @@ export function EnvEditor({ rows, onChange }: { rows: EnvRow[]; onChange: (rows:
         </div>
       ))}
       <button className="btn btn-ghost" type="button" onClick={() => onChange([...rows, { key: nextKey++, name: '', value: '', secret: false }])}>
-        <Icon name="plus" size={14} /> Add variable
+        <Icon name="plus" size={14} /> {t('Add variable')}
       </button>
     </div>
   );

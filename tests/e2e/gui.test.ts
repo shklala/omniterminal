@@ -130,6 +130,11 @@ ${(await c.call<string>('sessions.text', { profileId })).trim()}`);
     }, 20000);
     await shot(page, '04-reconnected');
 
+    // Administrator: an elevated session shows the badge; a normal one offers "Continue as Administrator".
+    const st = await c.call<{ managerElevated: boolean }>('system.elevation');
+    if (st.managerElevated) await page.locator('.admin-pill').waitFor({ timeout: 5000 });
+    else await page.getByRole('button', { name: 'Admin', exact: true }).waitFor({ timeout: 5000 });
+
     // Dashboard shows the running terminal; second terminal created from dashboard is independent.
     await page.getByRole('button', { name: /All Terminals/ }).click();
     await page.getByText('Running').first().waitFor();
@@ -138,7 +143,7 @@ ${(await c.call<string>('sessions.text', { profileId })).trim()}`);
     // Settings dialog renders the tool isolation tab.
     await page.locator('.dash-row').filter({ hasText: 'Claude-01' }).getByTitle('More actions').click();
     await page.getByRole('button', { name: 'Settings…' }).click();
-    await page.getByRole('button', { name: 'Tools' }).click();
+    await page.getByRole('button', { name: 'Tools', exact: true }).click();
     await page.getByText('CLAUDE_CONFIG_DIR', { exact: false }).first().waitFor();
     await page.getByText('Supabase access token').first().waitFor();
     await shot(page, '06-settings-tools');

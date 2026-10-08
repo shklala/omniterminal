@@ -29,6 +29,11 @@ const api = {
   exitCompletely: (): Promise<void> => ipcRenderer.invoke('omni:exit-completely'),
   quitGui: (): Promise<void> => ipcRenderer.invoke('omni:quit-gui'),
   attention: (): Promise<void> => ipcRenderer.invoke('omni:attention'),
+  setTitleBar: (theme: string): Promise<void> => ipcRenderer.invoke('omni:set-titlebar', theme),
+  pickThemeImage: (): Promise<string | null> => ipcRenderer.invoke('omni:pick-theme-image'),
+  themeImageUrl: (name: string): Promise<string | null> => ipcRenderer.invoke('omni:theme-image-url', name),
+  enableSudo: (): Promise<{ ok: boolean; status: unknown }> => ipcRenderer.invoke('omni:enable-sudo'),
+  openElevatedWindow: (cwd: string): Promise<boolean> => ipcRenderer.invoke('omni:open-elevated-window', cwd),
   focusWindow: (): Promise<void> => ipcRenderer.invoke('omni:focus-window'),
 };
 

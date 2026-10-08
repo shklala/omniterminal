@@ -261,3 +261,34 @@ describe('crash recovery', () => {
     ctx = ctx2;
   });
 });
+
+describe('custom terminal themes', () => {
+  const colors = () => {
+    const keys = ['background', 'foreground', 'cursor', 'selectionBackground', 'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
+      'brightBlack', 'brightRed', 'brightGreen', 'brightYellow', 'brightBlue', 'brightMagenta', 'brightCyan', 'brightWhite'];
+    return Object.fromEntries(keys.map((k, i) => [k, `#${(i * 0x0a0b0c + 0x101010).toString(16).padStart(6, '0').slice(-6)}`]));
+  };
+
+  it('saves, lists, updates and deletes themes', async () => {
+    const saved = (await ctx.service.handle('themes.save', { theme: { name: 'Ocean', colors: colors(), imageOpacity: 0.4, imageFit: 'tile' } }, 't')) as { id: string; name: string; imageFit: string };
+    expect(saved.id).toMatch(/^custom:[0-9a-f-]{36}$/);
+    expect(saved.imageFit).toBe('tile');
+    expect(ctx.service.state().customThemes.map((x) => x.name)).toEqual(['Ocean']);
+    await ctx.service.handle('themes.save', { theme: { id: saved.id, name: 'Ocean 2', colors: colors() } }, 't');
+    expect(ctx.service.state().customThemes.map((x) => x.name)).toEqual(['Ocean 2']);
+    // A terminal can use it (theme ids are longer than the built-in names).
+    const p = await pm().create({ name: 'Themed', appearance: { theme: saved.id } as never });
+    expect(p.appearance.theme).toBe(saved.id);
+    await ctx.service.handle('themes.delete', { id: saved.id }, 't');
+    expect(ctx.service.state().customThemes).toHaveLength(0);
+  });
+
+  it('rejects invalid colours, names and image paths', async () => {
+    const bad = { ...colors(), red: 'red; background:url(x)' };
+    await expect(ctx.service.handle('themes.save', { theme: { name: 'Bad', colors: bad } }, 't')).rejects.toThrow(/Colour "red"/);
+    await expect(ctx.service.handle('themes.save', { theme: { name: '', colors: colors() } }, 't')).rejects.toThrow(/name/);
+    await expect(
+      ctx.service.handle('themes.save', { theme: { name: 'Img', colors: colors(), backgroundImage: '..\..\Windows\win.ini' } }, 't'),
+    ).rejects.toThrow(/background image/);
+  });
+});

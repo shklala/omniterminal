@@ -1,13 +1,15 @@
 // Window chrome: sidebar, tab bar, top bar, context menu.
 
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import type { Profile, SessionInfo, ShellInfo } from '../../shared/types';
 import type { DaemonStatus } from '../api';
+import { baseProfileId, instanceNumber } from '../../shared/sessionKey';
 import { STATUS_LABEL, cx, shellLabel, statsSummary, uiStatus, type ResourceStats, type UiStatus } from '../util';
 import { Icon } from './Icon';
+import { t } from '../i18n';
 
 export function StatusDot({ status }: { status: UiStatus }) {
-  return <span className={cx('status-dot', `st-${status}`)} title={STATUS_LABEL[status]} />;
+  return <span className={cx('status-dot', `st-${status}`)} title={t(STATUS_LABEL[status])} />;
 }
 
 export function ActivityBadge({ kind }: { kind: 'none' | 'output' | 'bell' | undefined }) {
@@ -15,7 +17,7 @@ export function ActivityBadge({ kind }: { kind: 'none' | 'output' | 'bell' | und
   return (
     <span
       className={cx('activity', `activity-${kind}`)}
-      title={kind === 'bell' ? 'Needs attention (the program rang the bell)' : 'New output'}
+      title={kind === 'bell' ? t('Needs attention (the program rang the bell)') : t('New output')}
     />
   );
 }
@@ -24,7 +26,7 @@ export function StatusPill({ status }: { status: UiStatus }) {
   return (
     <span className={cx('status-pill', `st-${status}`)}>
       <span className="status-dot" />
-      {STATUS_LABEL[status]}
+      {t(STATUS_LABEL[status])}
     </span>
   );
 }
@@ -42,7 +44,14 @@ export function Sidebar({
   onSettings,
   onReorder,
   activity,
+  shells,
+  titles,
+  instances,
 }: {
+  shells: ShellInfo[];
+  titles: Map<string, string>;
+  /** Extra running shells ("Open another"), grouped by terminal. */
+  instances: Map<string, SessionInfo[]>;
   profiles: Profile[];
   sessions: Map<string, SessionInfo>;
   openTabs: string[];
@@ -79,23 +88,23 @@ export function Sidebar({
         <span>OmniTerminal</span>
       </div>
       <button className="btn btn-primary new-btn" onClick={onNew} title="New Terminal (Ctrl+Shift+T)">
-        <Icon name="plus" size={16} /> New Terminal
+        <Icon name="plus" size={16} /> {t('New Terminal')}
       </button>
       <button className={cx('nav-item', active === 'dashboard' && 'active')} onClick={onDashboard}>
         <Icon name="grid" size={15} />
-        <span>All Terminals</span>
+        <span>{t('All Terminals')}</span>
         <span className="nav-count">{runningCount}/{profiles.length}</span>
       </button>
       <div className="sidebar-search">
         <Icon name="search" size={14} />
-        <input placeholder="Filter terminals" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        <input placeholder={t('Filter terminals')} value={filter} onChange={(e) => setFilter(e.target.value)} />
       </div>
       <div className="profile-list" role="list">
         {shown.map((p) => {
           const st = uiStatus(sessions.get(p.id), openTabs.includes(p.id));
           return (
+            <Fragment key={p.id}>
             <button
-              key={p.id}
               role="listitem"
               className={cx(
                 'profile-item',
@@ -127,24 +136,55 @@ export function Sidebar({
                 e.preventDefault();
                 onContextMenu(p.id, e.clientX, e.clientY);
               }}
-              title={`${p.name} — ${STATUS_LABEL[st]}`}
+              title={`${p.name} (${t(STATUS_LABEL[st]).toLowerCase()})`}
             >
               <span className="profile-color" style={{ background: p.color }} />
-              <span className="profile-name">{p.name}</span>
-              <ActivityBadge kind={activity.get(p.id)} />
+              <span className="profile-text">
+                <span className="profile-name">{p.name}</span>
+                <span className="profile-sub" dir="auto">
+                  {st === 'running' || st === 'disconnected'
+                    ? `${sessions.get(p.id)?.elevated ? t('Admin: ') : ''}${titles.get(p.id) || shellLabel(p, shells)}${st === 'disconnected' ? t(' (in background)') : ''}`
+                    : t('Stopped')}
+                </span>
+              </span>
+              {/* Only "needs attention" shows here; ongoing output is shown on tabs. */}
+              <ActivityBadge kind={activity.get(p.id) === 'bell' ? 'bell' : 'none'} />
               <StatusDot status={st} />
             </button>
+            {(instances.get(p.id) ?? []).map((inst) => {
+              const ist = uiStatus(inst, openTabs.includes(inst.key));
+              return (
+                <button
+                  key={inst.key}
+                  role="listitem"
+                  className={cx('profile-item', 'instance-item', active === inst.key && 'active')}
+                  onClick={() => onSelect(inst.key)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    onContextMenu(inst.key, e.clientX, e.clientY);
+                  }}
+                  title={`${p.name} ${inst.instance}`}
+                >
+                  <span className="profile-text">
+                    <span className="profile-name">{`${p.name} ${inst.instance}`}</span>
+                  </span>
+                  <ActivityBadge kind={activity.get(inst.key) === 'bell' ? 'bell' : 'none'} />
+                  <StatusDot status={ist} />
+                </button>
+              );
+            })}
+            </Fragment>
           );
         })}
-        {profiles.length === 0 && <div className="empty-hint">No terminals yet. Click <b>New Terminal</b>.</div>}
-        {profiles.length > 0 && shown.length === 0 && <div className="empty-hint">No match.</div>}
+        {profiles.length === 0 && <div className="empty-hint">{t('No terminals yet.')}</div>}
+        {profiles.length > 0 && shown.length === 0 && <div className="empty-hint">{t('No match.')}</div>}
       </div>
       <div className="sidebar-footer">
         <div className={cx('daemon-status', daemon.connected ? 'ok' : 'bad')} title={daemon.message}>
           <span className="status-dot" />
-          <span>{daemon.connected ? `Session manager · pid ${daemon.pid}` : daemon.message}</span>
+          <span>{daemon.connected ? t('Session manager running') : daemon.message}</span>
         </div>
-        <button className="icon-btn" onClick={onSettings} title="Application settings">
+        <button className="icon-btn" onClick={onSettings} title={t('Application settings')}>
           <Icon name="settings" size={16} />
         </button>
       </div>
@@ -177,20 +217,21 @@ export function TabBar({
     <div className="tabbar drag">
       <div className="tabs no-drag">
         {tabs.map((id) => {
-          const p = profiles.get(id);
+          const p = profiles.get(baseProfileId(id));
           if (!p) return null;
           const st = uiStatus(sessions.get(id), true);
+          const n = instanceNumber(id);
           return (
             <div
               key={id}
               className={cx('tab', active === id && 'active')}
               onClick={() => onSelect(id)}
               onAuxClick={(e) => e.button === 1 && onClose(id)}
-              title={titles.get(id) ? `${p.name} — ${titles.get(id)}` : p.name}
+              title={titles.get(id) ? `${p.name}: ${titles.get(id)}` : p.name}
             >
               <span className="tab-color" style={{ background: p.color }} />
               <StatusDot status={st} />
-              <span className="tab-name">{p.name}</span>
+              <span className="tab-name">{n > 1 ? `${p.name} ${n}` : p.name}</span>
               <ActivityBadge kind={activity.get(id)} />
               <button
                 className="tab-close"
@@ -198,14 +239,14 @@ export function TabBar({
                   e.stopPropagation();
                   onClose(id);
                 }}
-                title="Close tab (session keeps running)"
+                title={t('Close tab (session keeps running)')}
               >
                 <Icon name="x" size={12} />
               </button>
             </div>
           );
         })}
-        <button className="tab-new" onClick={onNew} title="New Terminal">
+        <button className="tab-new" onClick={onNew} title={t('New Terminal')}>
           <Icon name="plus" size={14} />
         </button>
       </div>
@@ -226,7 +267,17 @@ export function TopBar({
   onStart,
   programTitle,
   stats,
+  admin,
+  onRunAsAdmin,
+  onRestartNormal,
 }: {
+  /**
+   * 'all': the whole app runs as administrator; 'session': this terminal was started as administrator;
+   * 'available': can be restarted as administrator; null: not applicable (e.g. WSL).
+   */
+  admin: 'all' | 'session' | 'available' | null;
+  onRunAsAdmin: () => void;
+  onRestartNormal: () => void;
   programTitle: string;
   stats: ResourceStats | undefined;
   profile: Profile;
@@ -249,37 +300,49 @@ export function TopBar({
           <div className="topbar-title">
             <span className="name">{profile.name}</span>
             <StatusPill status={status} />
-            {programTitle && <span className="program-title" title="Title set by the running program">{programTitle}</span>}
+            {(admin === 'all' || admin === 'session') && (
+              <span className="admin-pill" title={t('This terminal runs with administrator rights')}>
+                <Icon name="shield" size={11} /> {t('Administrator')}
+              </span>
+            )}
+            {programTitle && <span className="program-title" title={t('Title set by the running program')}>{programTitle}</span>}
           </div>
           <div className="topbar-meta">
             <span>{shellLabel(profile, shells)}</span>
-            <span className="sep">·</span>
             <span className="mono" title={profile.cwd || 'User folder'}>{profile.cwd || '%USERPROFILE%'}</span>
             {session && (
               <>
-                <span className="sep">·</span>
-                <span className="mono" title="Session ID">{session.sessionId.slice(0, 8)}</span>
+                    <span className="mono" title="Session ID">{session.sessionId.slice(0, 8)}</span>
               </>
             )}
             {running && stats && (
               <>
-                <span className="sep">·</span>
-                <span title={`${stats.processes} process(es) in this terminal`}>{statsSummary(stats, programTitle)}</span>
+                    <span dir="auto" title={`${stats.processes} process(es) in this terminal`}>{statsSummary(stats, programTitle)}</span>
               </>
             )}
           </div>
         </div>
       </div>
       <div className="topbar-actions">
-        <button className="btn btn-sm" onClick={onNew} title="New Terminal"><Icon name="plus" size={14} /> New</button>
+        <button className="btn btn-sm" onClick={onNew} title={t('New Terminal')}><Icon name="plus" size={14} /> {t('New')}</button>
         {running ? (
-          <button className="btn btn-sm" onClick={onReconnect} title="Re-attach to the running session"><Icon name="link" size={14} /> Reconnect</button>
+          <button className="btn btn-sm" onClick={onReconnect} title={t('Re-attach to the running session')}><Icon name="link" size={14} /> {t('Reconnect')}</button>
         ) : (
-          <button className="btn btn-sm" onClick={onStart} title="Start session"><Icon name="play" size={14} /> Start</button>
+          <button className="btn btn-sm" onClick={onStart} title={t('Start session')}><Icon name="play" size={14} /> {t('Start')}</button>
         )}
-        <button className="btn btn-sm" onClick={onRestart} title="Restart the shell"><Icon name="restart" size={14} /> Restart</button>
-        <button className="btn btn-sm btn-danger-ghost" onClick={onStop} disabled={!running} title="Stop the shell and its processes"><Icon name="stop" size={14} /> Stop</button>
-        <button className="btn btn-sm" onClick={onSettings} title="Terminal settings"><Icon name="settings" size={14} /> Settings</button>
+        {admin === 'available' && (
+          <button className="btn btn-sm btn-admin" onClick={onRunAsAdmin} title={t('Restart this terminal with administrator rights (Windows asks for permission once)')}>
+            <Icon name="shield" size={14} /> {t('Run as Administrator')}
+          </button>
+        )}
+        {admin === 'session' && (
+          <button className="btn btn-sm" onClick={onRestartNormal} title={t('Restart this terminal with your normal rights')}>
+            <Icon name="restart" size={14} /> {t('Restart normally')}
+          </button>
+        )}
+        <button className="btn btn-sm" onClick={onRestart} title={t('Restart the shell')}><Icon name="restart" size={14} /> {t('Restart')}</button>
+        <button className="btn btn-sm btn-danger-ghost" onClick={onStop} disabled={!running} title={t('Stop the shell and its processes')}><Icon name="stop" size={14} /> {t('Stop')}</button>
+        <button className="btn btn-sm" onClick={onSettings} title={t('Terminal settings')}><Icon name="settings" size={14} /> {t('Settings')}</button>
       </div>
     </div>
   );

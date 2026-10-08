@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import type { Profile, SessionInfo, ShellInfo } from '../shared/types';
 
 export type UiStatus = 'running' | 'disconnected' | 'stopped' | 'exited';
@@ -30,8 +31,8 @@ export function fmtDate(ts: number | null | undefined): string {
   const d = new Date(ts);
   const now = Date.now();
   const diff = now - ts;
-  if (diff < 60_000) return 'just now';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} min ago`;
+  if (diff < 60_000) return t('just now');
+  if (diff < 3_600_000) return t('{n} min ago', { n: Math.floor(diff / 60_000) });
   if (diff < 86_400_000 && new Date(now).getDate() === d.getDate()) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   return d.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
 }
@@ -66,12 +67,12 @@ export function fmtBytes(n: number): string {
   return `${Math.round(n / 1024 ** 2)} MB`;
 }
 
-/** "claude · 412 MB" summary of what is running inside a terminal. */
+/** "claude, 412 MB" summary of what is running inside a terminal. */
 export function statsSummary(s: ResourceStats | undefined, title = ''): string {
   if (!s) return '';
-  // Skip process names already visible in the program title ("claude · claude").
+  // Skip process names already visible in the program title ("claude, claude").
   const running = [...new Set(s.children)].filter((c) => !title.toLowerCase().includes(c.toLowerCase())).slice(0, 3).join(', ');
-  return `${running ? `${running} · ` : ''}${fmtBytes(s.memory)}`;
+  return `${running ? `${running}, ` : ''}${fmtBytes(s.memory)}`;
 }
 
 /**
@@ -87,4 +88,19 @@ export function cleanTitle(raw: string, profileName = ''): string {
   t = t.replace(/\s{2,}/g, ' ').trim();
   if (SHELL_PATH_TITLE.test(t) || t === profileName) return '';
   return t;
+}
+
+/** Output that usually means "this needs administrator rights". Matched on ANSI-stripped text. */
+const ADMIN_NEEDED_RE =
+  /requires? elevation|run (?:it |this |the command )?as (?:an )?administrator|administrator (?:privileges|rights|permissions) (?:are |is )?required|must be (?:run|running) as (?:an )?administrator|you (?:must|need to) be an administrator|ERROR_ELEVATION_REQUIRED|elevated (?:privileges|permissions) (?:are )?required|UnauthorizedAccessException|access is denied|access to the path .{1,300} is denied/i;
+
+const ANSI_RE = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g;
+
+export function looksLikeAdminNeeded(output: string): boolean {
+  return ADMIN_NEEDED_RE.test(output.replace(ANSI_RE, ''));
+}
+
+/** Shell kinds where "Continue as Administrator" (Windows sudo, inline) applies. */
+export function supportsElevation(kind: string | undefined): boolean {
+  return kind === 'powershell' || kind === 'pwsh' || kind === 'cmd' || kind === 'gitbash';
 }
