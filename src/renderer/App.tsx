@@ -107,6 +107,7 @@ export function App() {
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
   const [updateDismissed, setUpdateDismissed] = useState(false);
   const zoomTimer = useRef<number | null>(null);
+  const isPackaged = useRef(false);
   const activeRef = useRef(active);
   activeRef.current = active;
   const focusRef = useRef(focusMap);
@@ -210,6 +211,7 @@ export function App() {
     });
     const offNotice = bridge.onNotice((text) => toastRef.current(text, 'error'));
     void bridge.updateStatus().then(setUpdate).catch(() => undefined);
+    void bridge.appInfo().then((i) => (isPackaged.current = i.isPackaged)).catch(() => undefined);
     const offUpdate = bridge.onUpdateStatus(setUpdate);
     return () => {
       offCmd();
@@ -473,7 +475,9 @@ export function App() {
 
   const notify = (title: string, body: string, key: string) => {
     void bridge.attention();
-    if (!('Notification' in window)) return;
+    // Unpackaged (dev/test) builds skip Windows notifications: for those, Electron would add an
+    // "Electron" shortcut to the Start menu. The tab dot and taskbar flash still show.
+    if (!('Notification' in window) || !isPackaged.current) return;
     const n = new Notification(title, { body, silent: false });
     n.onclick = () => {
       void bridge.focusWindow();

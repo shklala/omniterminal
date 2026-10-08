@@ -49,7 +49,9 @@ async function refreshDesktopSettings(): Promise<void> {
   }
 }
 
-app.setAppUserModelId('com.omniterminal.app');
+// Development and test runs (the plain electron.exe) must never share the installed app's ID:
+// Windows would then show "Electron" and the Electron icon for OmniTerminal in Start and the taskbar.
+app.setAppUserModelId(app.isPackaged ? 'com.omniterminal.app' : 'com.omniterminal.dev');
 // Dev/test instances (custom OMNITERMINAL_HOME) get their own Chromium profile and single-instance lock.
 if (process.env.OMNITERMINAL_HOME) app.setPath('userData', path.join(paths.home, 'electron'));
 
