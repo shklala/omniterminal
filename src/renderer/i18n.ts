@@ -1,12 +1,26 @@
 // UI translations. English source text is the key, so anything not translated falls back to English.
-// Interpolation: t('Delete "{name}"?', { name }).
+// Interpolation: t('Delete "{name}"?', { name }). Dictionaries live in ./locales; run
+// `node scripts/i18n-keys.mjs` to see which strings a language is missing.
 
-export type Lang = 'en' | 'ar';
+import AR from './locales/ar';
+import DE from './locales/de';
+import ES from './locales/es';
+import FR from './locales/fr';
+import ZH from './locales/zh';
+
+export type Lang = 'en' | 'ar' | 'es' | 'fr' | 'de' | 'zh';
 
 export const LANGUAGES: { id: Lang; label: string }[] = [
   { id: 'en', label: 'English' },
   { id: 'ar', label: 'العربية' },
+  { id: 'es', label: 'Español' },
+  { id: 'fr', label: 'Français' },
+  { id: 'de', label: 'Deutsch' },
+  { id: 'zh', label: '简体中文' },
 ];
+
+const DICTS: Partial<Record<Lang, Record<string, string>>> = { ar: AR, es: ES, fr: FR, de: DE, zh: ZH };
+const HTML_LANG: Record<Lang, string> = { en: 'en', ar: 'ar', es: 'es', fr: 'fr', de: 'de', zh: 'zh-CN' };
 
 let current: Lang = 'en';
 
@@ -16,326 +30,15 @@ export function getLanguage(): Lang {
 
 /** Sets the UI language, including document direction (Arabic is right-to-left). */
 export function setLanguage(lang: string): void {
-  current = lang === 'ar' ? 'ar' : 'en';
+  current = LANGUAGES.some((l) => l.id === lang) ? (lang as Lang) : 'en';
   if (typeof document !== 'undefined') {
-    document.documentElement.lang = current;
+    document.documentElement.lang = HTML_LANG[current];
     document.documentElement.dir = current === 'ar' ? 'rtl' : 'ltr';
   }
 }
 
 export function t(text: string, vars?: Record<string, string | number>): string {
-  let out = (current === 'ar' ? AR[text] : undefined) ?? text;
+  let out = DICTS[current]?.[text] ?? text;
   if (vars) for (const [k, v] of Object.entries(vars)) out = out.split(`{${k}}`).join(String(v));
   return out;
 }
-
-const AR: Record<string, string> = {
-  // sidebar, tabs, status
-  'New Terminal': 'طرفية جديدة',
-  'All Terminals': 'كل الطرفيات',
-  'Filter terminals': 'تصفية الطرفيات',
-  'No terminals yet.': 'لا توجد طرفيات بعد.',
-  'No match.': 'لا نتائج.',
-  'Session manager running': 'مدير الجلسات يعمل',
-  'Application settings': 'إعدادات التطبيق',
-  Running: 'تعمل',
-  Disconnected: 'في الخلفية',
-  Stopped: 'متوقفة',
-  ' (in background)': ' (في الخلفية)',
-  'Admin: ': 'مسؤول: ',
-  'Close tab (session keeps running)': 'إغلاق التبويب (تستمر الجلسة في العمل)',
-  'Needs attention (the program rang the bell)': 'تحتاج إلى انتباهك (البرنامج أطلق تنبيهًا)',
-  'New output': 'مخرجات جديدة',
-
-  // top bar
-  New: 'جديد',
-  Reconnect: 'إعادة الاتصال',
-  Start: 'تشغيل',
-  Restart: 'إعادة التشغيل',
-  Stop: 'إيقاف',
-  Settings: 'الإعدادات',
-  Administrator: 'مسؤول',
-  'Run as Administrator': 'تشغيل كمسؤول',
-  'Restart normally': 'إعادة التشغيل بصلاحيات عادية',
-  'This terminal runs with administrator rights': 'تعمل هذه الطرفية بصلاحيات المسؤول',
-  'Restart this terminal with administrator rights (Windows asks for permission once)': 'إعادة تشغيل هذه الطرفية بصلاحيات المسؤول (سيطلب Windows الإذن)',
-  'Restart this terminal with your normal rights': 'إعادة تشغيل هذه الطرفية بصلاحياتك العادية',
-  'Re-attach to the running session': 'إعادة الاتصال بالجلسة العاملة',
-  'Start session': 'تشغيل الجلسة',
-  'Restart the shell': 'إعادة تشغيل سطر الأوامر',
-  'Stop the shell and its processes': 'إيقاف سطر الأوامر وبرامجه',
-  'Terminal settings': 'إعدادات الطرفية',
-  'Title set by the running program': 'العنوان الذي حدده البرنامج العامل',
-
-  // dashboard
-  '{n} terminals, {r} running': '{n} طرفيات، {r} منها تعمل',
-  '1 terminal, {r} running': 'طرفية واحدة، {r} تعمل',
-  ', using {mem}': '، وتستخدم {mem}',
-  '. Running as administrator': '. يعمل بصلاحيات المسؤول',
-  'Search name, folder, notes…': 'ابحث بالاسم أو المجلد أو الملاحظات…',
-  'Sidebar order': 'ترتيب الشريط الجانبي',
-  Name: 'الاسم',
-  Status: 'الحالة',
-  'Last used': 'آخر استخدام',
-  Created: 'الإنشاء',
-  Shell: 'سطر الأوامر',
-  'Working directory': 'مجلد العمل',
-  'Session ID': 'معرّف الجلسة',
-  'Stop all': 'إيقاف الكل',
-  Import: 'استيراد',
-  Export: 'تصدير',
-  'Import configuration': 'استيراد الإعدادات',
-  'Export configuration (never credentials)': 'تصدير الإعدادات (بدون بيانات الدخول)',
-  'Stop every running terminal': 'إيقاف كل الطرفيات العاملة',
-  'These keep running after you close the window.': 'تستمر في العمل بعد إغلاق النافذة.',
-  None: 'لا شيء',
-  Show: 'عرض',
-  Open: 'فتح',
-  'More actions': 'المزيد',
-  'Create your first terminal': 'أنشئ أول طرفية',
-  'Each terminal keeps its own Claude Code, gcloud, GitHub and Git logins, its own variables and its own history. It still has full access to your machine.':
-    'كل طرفية تحتفظ بتسجيلات دخولها الخاصة في Claude Code وgcloud وGitHub وGit، وبمتغيراتها وسجلّها. وتبقى لها صلاحية الوصول الكاملة إلى جهازك.',
-  'New terminal from a template': 'طرفية جديدة من قالب',
-  'Starts claude in its own account': 'يشغّل claude بحسابه الخاص',
-  'Bash with Git tools': 'Bash مع أدوات Git',
-  'Keyboard shortcuts': 'اختصارات لوحة المفاتيح',
-  'Command palette': 'لوحة الأوامر',
-  'New terminal': 'طرفية جديدة',
-  'Find in terminal': 'بحث في الطرفية',
-  'Next tab': 'التبويب التالي',
-  'Go to tab': 'الانتقال إلى تبويب',
-  'Close tab (keeps running)': 'إغلاق التبويب (تستمر في العمل)',
-  Zoom: 'تكبير وتصغير',
-  'All terminals': 'كل الطرفيات',
-  'just now': 'الآن',
-  '{n} min ago': 'قبل {n} د',
-
-  // new terminal / general fields
-  'Each terminal is an independent environment with its own config, credentials and history.':
-    'كل طرفية بيئة مستقلة بإعداداتها وبيانات دخولها وسجلّها.',
-  'Working directory ': 'مجلد العمل',
-  'Default: your user folder': 'الافتراضي: مجلد المستخدم',
-  Browse: 'استعراض',
-  'Custom executable…': 'برنامج مخصص…',
-  'Shell executable': 'ملف سطر الأوامر',
-  'Startup command': 'أمر بدء التشغيل',
-  optional: 'اختياري',
-  Color: 'اللون',
-  'Environment variables': 'متغيرات البيئة',
-  Cancel: 'إلغاء',
-  'Create & Launch': 'إنشاء وتشغيل',
-  'e.g. Claude Account 03': 'مثال: حساب Claude 03',
-  'Claude Code, gcloud, GitHub CLI, Git and other tools get their own config folders automatically.':
-    'تحصل أدوات مثل Claude Code وgcloud وGitHub CLI وGit على مجلدات إعدادات خاصة بها تلقائيًا.',
-  'Add variable': 'إضافة متغير',
-  Value: 'القيمة',
-  Secret: 'سري',
-
-  // profile settings
-  '{name} settings': 'إعدادات {name}',
-  General: 'عام',
-  Environment: 'البيئة',
-  Tools: 'الأدوات',
-  Appearance: 'المظهر',
-  Advanced: 'متقدم',
-  Save: 'حفظ',
-  'Changes to shell/environment apply after Restart.': 'تُطبَّق تغييرات سطر الأوامر والبيئة بعد إعادة التشغيل.',
-  'Notes / description': 'ملاحظات / وصف',
-  'Search tools or variables': 'ابحث عن أداة أو متغير',
-  '{n} tools': '{n} أداة',
-  'AI coding tools': 'أدوات البرمجة بالذكاء الاصطناعي',
-  'Git and code hosting': 'Git واستضافة الأكواد',
-  'Cloud and infrastructure': 'السحابة والبنية التحتية',
-  'Hosting and deploys': 'الاستضافة والنشر',
-  'Developer services': 'خدمات المطورين',
-  'Package managers': 'مديرو الحزم',
-  'Data and ML': 'البيانات وتعلّم الآلة',
-  'Shell and REPL history': 'سجل الأوامر',
-  Separate: 'منفصل',
-  'Shared login': 'تسجيل دخول مشترك',
-  'Own token': 'رمز خاص',
-  Shared: 'مشترك',
-  'Custom config mappings': 'مسارات إعدادات مخصصة',
-  'Known limitations': 'قيود معروفة',
-  'Font family': 'نوع الخط',
-  'Font size': 'حجم الخط',
-  'Terminal theme': 'سمة الطرفية',
-  Cursor: 'المؤشر',
-  'Reset to defaults': 'استعادة الافتراضي',
-
-  // app settings
-  'OmniTerminal Settings': 'إعدادات OmniTerminal',
-  Theme: 'المظهر',
-  'Use Windows setting': 'حسب إعداد Windows',
-  Dark: 'داكن',
-  Light: 'فاتح',
-  Language: 'اللغة',
-  'Session manager': 'مدير الجلسات',
-  'Start OmniTerminal Session Manager with Windows': 'تشغيل مدير جلسات OmniTerminal مع Windows',
-  'Runs the small background host at sign-in (no window), so the app opens instantly.':
-    'يشغّل الخدمة الخلفية الصغيرة عند تسجيل الدخول (بدون نافذة)، فيفتح التطبيق فورًا.',
-  'Keep the session manager running when idle': 'إبقاء مدير الجلسات يعمل عند الخمول',
-  'Otherwise it exits by itself after 10 minutes with no window and no running terminals.':
-    'وإلا فإنه يتوقف تلقائيًا بعد 10 دقائق إذا لم تكن هناك نافذة أو طرفيات عاملة.',
-  'New terminals': 'الطرفيات الجديدة',
-  'Default shell': 'سطر الأوامر الافتراضي',
-  'Default working directory': 'مجلد العمل الافتراضي',
-  'Your user folder': 'مجلد المستخدم',
-  'Re-detect installed shells': 'إعادة اكتشاف أسطر الأوامر المثبتة',
-  'Shell list refreshed': 'تم تحديث قائمة أسطر الأوامر',
-  Data: 'البيانات',
-  Version: 'الإصدار',
-  'Data folder': 'مجلد البيانات',
-  Profiles: 'الملفات الشخصية',
-  'Open data folder': 'فتح مجلد البيانات',
-  Exit: 'الخروج',
-  'Closing the window keeps your terminals running. Exit completely stops every terminal and the session manager.':
-    'إغلاق النافذة يُبقي طرفياتك تعمل. أما الخروج الكامل فيوقف كل الطرفيات ومدير الجلسات.',
-  'Exit completely…': 'خروج كامل…',
-  'Settings saved': 'تم حفظ الإعدادات',
-  'Reopen terminals after a restart': 'إعادة فتح الطرفيات بعد إعادة التشغيل',
-  Typing: 'الكتابة',
-  'Suggestions while typing (PowerShell)': 'اقتراحات أثناء الكتابة (PowerShell)',
-  "Shows matching commands from this terminal's history as you type. Up/Down picks one, F1 shows help for a command. Applies to terminals started after saving. Needs PSReadLine 2.1 or later: PowerShell 7 has it; for Windows PowerShell run Install-Module PSReadLine -Scope CurrentUser -Force once.":
-    'يعرض أوامر مطابقة من سجل هذه الطرفية أثناء الكتابة. اختر بالسهمين لأعلى ولأسفل، و F1 يعرض مساعدة الأمر. يُطبَّق على الطرفيات التي تبدأ بعد الحفظ. يتطلب PSReadLine 2.1 أو أحدث: متوفر في PowerShell 7، أما في Windows PowerShell فشغّل Install-Module PSReadLine -Scope CurrentUser -Force مرة واحدة.',
-  'Terminals that were running when Windows restarted start again, with their earlier output shown above. Programs inside them start fresh.':
-    'الطرفيات التي كانت تعمل عند إعادة تشغيل Windows تبدأ من جديد، مع عرض مخرجاتها السابقة في الأعلى. البرامج داخلها تبدأ من البداية.',
-
-  // context menu / palette
-  'Restart normally (not admin)': 'إعادة التشغيل بصلاحيات عادية',
-  'Continue as Administrator (in place)': 'المتابعة كمسؤول (في نفس الطرفية)',
-  'Continue as Administrator': 'المتابعة كمسؤول',
-  'Rename…': 'إعادة تسمية…',
-  'Open another': 'فتح نسخة أخرى',
-  'Open another {name}': 'فتح نسخة أخرى من {name}',
-  'Duplicate (no credentials)': 'نسخ (بدون بيانات الدخول)',
-  'Settings…': 'الإعدادات…',
-  'Export configuration…': 'تصدير الإعدادات…',
-  'Open profile folder': 'فتح مجلد الملف الشخصي',
-  'Delete…': 'حذف…',
-  'Jump to a terminal or run a command…': 'انتقل إلى طرفية أو نفّذ أمرًا…',
-  'No matches': 'لا نتائج',
-  Terminal: 'طرفية',
-  Action: 'إجراء',
-  start: 'تشغيل',
-  reconnect: 'إعادة الاتصال',
-  running: 'تعمل',
-  'Show All Terminals': 'عرض كل الطرفيات',
-  'Restart {name}': 'إعادة تشغيل {name}',
-  'Stop {name}': 'إيقاف {name}',
-  'Settings: {name}': 'إعدادات: {name}',
-  'Duplicate {name} (no credentials)': 'نسخ {name} (بدون بيانات الدخول)',
-  'Find in Terminal': 'بحث في الطرفية',
-  'Open Profile Folder: {name}': 'فتح مجلد: {name}',
-  'Stop All Terminals': 'إيقاف كل الطرفيات',
-  'Import Terminal Configuration…': 'استيراد إعدادات الطرفيات…',
-  'Export All Terminal Configuration…': 'تصدير إعدادات كل الطرفيات…',
-  'Exit Completely (stop everything)': 'خروج كامل (إيقاف كل شيء)',
-  'Run {name} as Administrator': 'تشغيل {name} كمسؤول',
-  'Continue {name} as Administrator (in place)': 'متابعة {name} كمسؤول (في نفس الطرفية)',
-  'Theme: Dark': 'المظهر: داكن',
-  'Theme: Light': 'المظهر: فاتح',
-  'Theme: Use Windows setting': 'المظهر: حسب إعداد Windows',
-  'Theme: Midnight': 'المظهر: منتصف الليل',
-  'Theme: Nord': 'المظهر: نورد',
-  Midnight: 'منتصف الليل',
-  Nord: 'نورد',
-  'Language: English': 'اللغة: English',
-  'Language: Arabic': 'اللغة: العربية',
-
-  // admin
-  'This looks like it needs administrator rights.': 'يبدو أن هذا يحتاج إلى صلاحيات المسؤول.',
-  Dismiss: 'إغلاق',
-  'Turn on Windows sudo?': 'تفعيل sudo في Windows؟',
-  'Turn on (Windows will ask)': 'تفعيل (سيطلب Windows الإذن)',
-  'Run "{name}" as Administrator?': 'تشغيل "{name}" كمسؤول؟',
-  'Restart as Administrator': 'إعادة التشغيل كمسؤول',
-  'Open an administrator window?': 'فتح نافذة بصلاحيات المسؤول؟',
-  'Open administrator PowerShell': 'فتح PowerShell كمسؤول',
-
-  // dialogs & toasts
-  'Rename terminal': 'إعادة تسمية الطرفية',
-  Rename: 'إعادة تسمية',
-  'Delete "{name}"?': 'حذف "{name}"؟',
-  'Delete terminal': 'حذف الطرفية',
-  'The terminal will be stopped and removed from OmniTerminal.': 'سيتم إيقاف الطرفية وإزالتها من OmniTerminal.',
-  'Also delete its private data (tool logins, credentials, history, logs)': 'احذف أيضًا بياناتها الخاصة (تسجيلات الدخول وبيانات الاعتماد والسجل)',
-  'Stop all terminals?': 'إيقاف كل الطرفيات؟',
-  'Stop {n} terminals': 'إيقاف {n} طرفيات',
-  'Stop 1 terminal': 'إيقاف طرفية واحدة',
-  'Every running terminal and the programs inside them will be stopped. Their settings, logins and history are kept.':
-    'ستتوقف كل الطرفيات العاملة والبرامج داخلها. تبقى إعداداتها وتسجيلات دخولها وسجلّها كما هي.',
-  'Exit OmniTerminal completely?': 'الخروج من OmniTerminal بالكامل؟',
-  'Stop everything and exit': 'إيقاف كل شيء والخروج',
-  'Reconnected to 1 running terminal': 'تمت إعادة الاتصال بطرفية واحدة تعمل',
-  'Reconnected to {n} running terminals': 'تمت إعادة الاتصال بـ {n} طرفيات تعمل',
-  'Stopped all terminals': 'تم إيقاف كل الطرفيات',
-  Saved: 'تم الحفظ',
-  'Saved. Restart the terminal to apply shell/environment changes.': 'تم الحفظ. أعد تشغيل الطرفية لتطبيق تغييرات سطر الأوامر والبيئة.',
-  'Deleted "{name}"': 'تم حذف "{name}"',
-  '"{name}" exited (code {code})': 'انتهت "{name}" (الرمز {code})',
-  'No results': 'لا نتائج',
-  'Administrator terminals use the sudo command built into Windows. Each time a terminal needs administrator rights, Windows asks you first.':
-    'تستخدم طرفيات المسؤول أمر sudo المدمج في Windows. في كل مرة تحتاج فيها طرفية إلى صلاحيات المسؤول، يطلب Windows إذنك أولًا.',
-  'This turns sudo on in inline mode, the same switch as Settings > System > For developers > Enable sudo. Windows asks for permission once to change it.':
-    'يفعّل هذا sudo بالوضع المضمّن، وهو نفس الخيار في الإعدادات > النظام > للمطورين > تمكين sudo. سيطلب Windows الإذن مرة واحدة لتغييره.',
-  'Windows sudo is on.': 'تم تفعيل sudo في Windows.',
-  'Sudo was not turned on (the permission prompt was cancelled or declined).': 'لم يتم تفعيل sudo (أُلغي طلب الإذن أو رُفض).',
-  'The terminal restarts with administrator rights. Windows asks for permission once. Programs running in it now will be stopped. It keeps the same folder, variables and accounts.':
-    'ستُعاد تشغيل الطرفية بصلاحيات المسؤول، وسيطلب Windows الإذن مرة واحدة. ستتوقف البرامج العاملة فيها الآن، وتحتفظ بنفس المجلد والمتغيرات والحسابات.',
-  'To keep what is running, use Continue as Administrator (in place) from the right-click menu.':
-    'للإبقاء على ما يعمل، استخدم "المتابعة كمسؤول (في نفس الطرفية)" من قائمة النقر بزر الفأرة الأيمن.',
-  "This version of Windows has no built-in sudo (it needs Windows 11 24H2 or later), so a terminal cannot switch to administrator rights in place. You can open a separate administrator PowerShell window in this terminal's folder instead. It will not have this terminal's private settings.":
-    'لا يتضمن هذا الإصدار من Windows أمر sudo (يتطلب Windows 11 24H2 أو أحدث)، لذا لا يمكن للطرفية التحول إلى صلاحيات المسؤول في مكانها. يمكنك بدلًا من ذلك فتح نافذة PowerShell منفصلة كمسؤول في مجلد هذه الطرفية، دون إعداداتها الخاصة.',
-  'This stops {n} running terminals, and every program inside them, and shuts down the session manager.':
-    'سيؤدي هذا إلى إيقاف {n} طرفيات عاملة وكل البرامج داخلها، وإيقاف مدير الجلسات.',
-  'This shuts down the session manager.': 'سيؤدي هذا إلى إيقاف مدير الجلسات.',
-  'Could not check administrator support.': 'تعذّر التحقق من دعم صلاحيات المسؤول.',
-  'This terminal already has administrator rights.': 'هذه الطرفية تملك صلاحيات المسؤول بالفعل.',
-  'Built-in': 'مدمجة',
-  'My themes': 'سماتي',
-  Edit: 'تعديل',
-  'New theme': 'سمة جديدة',
-  'Edit theme': 'تعديل السمة',
-  'Themes you make here can be used by any terminal.': 'السمات التي تنشئها هنا يمكن استخدامها في أي طرفية.',
-  'Delete theme': 'حذف السمة',
-  'Save theme': 'حفظ السمة',
-  'My theme': 'سمتي',
-  'Start from': 'البدء من',
-  'Copy colours from…': 'نسخ الألوان من…',
-  Colours: 'الألوان',
-  'Background image': 'صورة الخلفية',
-  'Change image…': 'تغيير الصورة…',
-  'Choose image…': 'اختيار صورة…',
-  'Remove image': 'إزالة الصورة',
-  'Image visibility': 'وضوح الصورة',
-  'Image fit': 'ملاءمة الصورة',
-  'Fill (crop to fit)': 'ملء (مع القص)',
-  'Fit (show whole image)': 'احتواء (عرض الصورة كاملة)',
-  Tile: 'تكرار',
-  Background: 'الخلفية',
-  Text: 'النص',
-  Selection: 'التحديد',
-  Black: 'أسود',
-  Red: 'أحمر',
-  Green: 'أخضر',
-  Yellow: 'أصفر',
-  Blue: 'أزرق',
-  Magenta: 'أرجواني',
-  Cyan: 'سماوي',
-  White: 'أبيض',
-  'Bright black': 'أسود فاتح',
-  'Bright red': 'أحمر فاتح',
-  'Bright green': 'أخضر فاتح',
-  'Bright yellow': 'أصفر فاتح',
-  'Bright blue': 'أزرق فاتح',
-  'Bright magenta': 'أرجواني فاتح',
-  'Bright cyan': 'سماوي فاتح',
-  'Bright white': 'أبيض فاتح',
-  Block: 'مربع',
-  Bar: 'خط عمودي',
-  Underline: 'خط سفلي',
-  Blink: 'وميض',
-  'Match case': 'مطابقة حالة الأحرف',
-  'Regular expression': 'تعبير نمطي',
-};

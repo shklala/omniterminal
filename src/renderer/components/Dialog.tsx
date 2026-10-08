@@ -22,11 +22,18 @@ export function Dialog({
 }) {
   // Escape closes only the topmost dialog (the theme editor opens on top of settings).
   const idRef = useRef(++dialogSeq);
+  const boxRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const id = idRef.current;
     openDialogs.push(id);
+    // Take the keyboard from the terminal behind (otherwise Esc and typing go to the shell).
+    // Inputs that focus themselves (autoFocus, select()) run first and keep their focus.
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!boxRef.current?.contains(document.activeElement)) boxRef.current?.focus();
     return () => {
       openDialogs.splice(openDialogs.indexOf(id), 1);
+      // Give the keyboard back to whatever had it (usually the terminal).
+      if (previous?.isConnected && openDialogs.length === 0) setTimeout(() => previous.focus(), 0);
     };
   }, []);
   useEffect(() => {
@@ -39,13 +46,13 @@ export function Dialog({
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`dialog ${wide ? 'dialog-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+      <div ref={boxRef} tabIndex={-1} className={`dialog ${wide ? 'dialog-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <header className="dialog-header">
           <div>
             <h2>{title}</h2>
             {subtitle && <div className="dialog-subtitle">{subtitle}</div>}
           </div>
-          <button className="icon-btn" onClick={onClose} aria-label="Close" title="Close (Esc)">
+          <button className="icon-btn" onClick={onClose} aria-label={t('Close')} title={t('Close (Esc)')}>
             <Icon name="x" />
           </button>
         </header>

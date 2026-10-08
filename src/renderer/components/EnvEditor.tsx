@@ -53,7 +53,7 @@ export function EnvEditor({ rows, onChange }: { rows: EnvRow[]; onChange: (rows:
               <button
                 className="icon-btn small"
                 type="button"
-                title="Show/hide while typing"
+                title={t('Show/hide while typing')}
                 onClick={() => setReveal((s) => {
                   const n = new Set(s);
                   if (n.has(r.key)) n.delete(r.key);
@@ -65,11 +65,11 @@ export function EnvEditor({ rows, onChange }: { rows: EnvRow[]; onChange: (rows:
               </button>
             )}
           </div>
-          <label className="switch" title="Store encrypted (DPAPI); never displayed or exported">
+          <label className="switch" title={t('Store encrypted (DPAPI); never displayed or exported')}>
             <input type="checkbox" checked={r.secret} onChange={(e) => update(r.key, { secret: e.target.checked })} />
             <span className="slider" />
           </label>
-          <button className="icon-btn small" type="button" title="Remove" onClick={() => onChange(rows.filter((x) => x.key !== r.key))}>
+          <button className="icon-btn small" type="button" title={t('Remove')} onClick={() => onChange(rows.filter((x) => x.key !== r.key))}>
             <Icon name="trash" size={14} />
           </button>
         </div>

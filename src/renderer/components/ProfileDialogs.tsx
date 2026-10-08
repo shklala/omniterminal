@@ -279,7 +279,7 @@ export function ProfileSettingsDialog({
               <GeneralFields values={general} onChange={(v) => setGeneral((s) => ({ ...s, ...v }))} state={state} />
               <label className="field">
                 <span>{tr('Notes / description')}</span>
-                <textarea rows={3} value={general.description} onChange={(e) => setGeneral((s) => ({ ...s, description: e.target.value }))} placeholder="What is this terminal for?" />
+                <textarea rows={3} value={general.description} onChange={(e) => setGeneral((s) => ({ ...s, description: e.target.value }))} placeholder={tr('What is this terminal for?')} />
               </label>
             </>
           )}
@@ -287,8 +287,7 @@ export function ProfileSettingsDialog({
           {tab === 'environment' && (
             <>
               <p className="hint">
-                Variables apply only to this terminal. <Icon name="lock" size={12} /> Secret values are encrypted with Windows DPAPI in
-                this terminal's <span className="mono">credentials</span> folder, never shown again, never logged and never exported.
+                <Icon name="lock" size={12} /> {tr("Variables apply only to this terminal. Secret values are encrypted with Windows DPAPI in this terminal's credentials folder, never shown again, never logged and never exported.")}
               </p>
               <EnvEditor rows={env} onChange={setEnv} />
             </>
@@ -297,8 +296,7 @@ export function ProfileSettingsDialog({
           {tab === 'tools' && (
             <>
               <p className="hint">
-                Tools with a switch get their own folder inside this terminal, so signing in here does not touch your other
-                terminals. Tools without one share their login, so give this terminal its own token instead.
+                {tr('Tools with a switch get their own folder inside this terminal, so signing in here does not touch your other terminals. Tools without one share their login, so give this terminal its own token instead.')}
               </p>
               <div className="tool-filter">
                 <div className="search-box">
@@ -327,7 +325,7 @@ export function ProfileSettingsDialog({
                             <span className="slider" />
                           </label>
                         )}
-                        <span className="tool-name">{t.name}</span>
+                        <span className="tool-name">{tr(t.name)}</span>
                         <span className={cx('badge', `iso-${level}`)}>
                           {tr(tokenSet ? 'Own token' : level === 'full' ? 'Separate' : level === 'partial' ? 'Shared login' : 'Shared')}
                         </span>
@@ -342,7 +340,7 @@ export function ProfileSettingsDialog({
                       {(t.tokenVars ?? []).map((tv) => (
                         <TokenField key={tv.envVar} tokenVar={tv} rows={env} onChange={setEnv} />
                       ))}
-                      {t.whoami && <div className="tool-whoami">Check which account is active: <code>{t.whoami}</code></div>}
+                      {t.whoami && <div className="tool-whoami">{tr('Check which account is active:')} <code>{t.whoami}</code></div>}
                     </div>
                   );
                 })}
@@ -351,23 +349,23 @@ export function ProfileSettingsDialog({
               ))}
 
               <h3 className="subhead">{tr('Custom config mappings')}</h3>
-              <p className="hint">Point any CLI's config variable at this terminal (relative paths live inside the profile folder).</p>
+              <p className="hint">{tr("Point any CLI's config variable at this terminal (relative paths live inside the profile folder).")}</p>
               <div className="mapping-editor">
                 {mappings.map((m, i) => (
                   <div key={i} className="mapping-row">
                     <input placeholder="ENV_VAR" value={m.envVar} spellCheck={false} onChange={(e) => setMappings((s) => s.map((x, j) => (j === i ? { ...x, envVar: e.target.value.trim() } : x)))} />
                     <input placeholder="config/mytool" value={m.path} spellCheck={false} onChange={(e) => setMappings((s) => s.map((x, j) => (j === i ? { ...x, path: e.target.value } : x)))} />
                     <select value={m.kind} onChange={(e) => setMappings((s) => s.map((x, j) => (j === i ? { ...x, kind: e.target.value as 'dir' | 'file' } : x)))}>
-                      <option value="dir">Folder</option>
-                      <option value="file">File</option>
+                      <option value="dir">{tr('Folder')}</option>
+                      <option value="file">{tr('File')}</option>
                     </select>
-                    <button className="icon-btn small" onClick={() => setMappings((s) => s.filter((_, j) => j !== i))} title="Remove">
+                    <button className="icon-btn small" onClick={() => setMappings((s) => s.filter((_, j) => j !== i))} title={tr('Remove')}>
                       <Icon name="trash" size={14} />
                     </button>
                   </div>
                 ))}
                 <button className="btn btn-ghost" onClick={() => setMappings((s) => [...s, { envVar: '', path: 'config/', kind: 'dir' }])}>
-                  <Icon name="plus" size={14} /> Add mapping
+                  <Icon name="plus" size={14} /> {tr('Add mapping')}
                 </button>
               </div>
 
@@ -377,8 +375,8 @@ export function ProfileSettingsDialog({
                   <div key={l.id} className="limitation">
                     <Icon name="alert" size={14} />
                     <div>
-                      <b>{l.name}</b>
-                      <div className="tool-notes">{l.notes}</div>
+                      <b>{tr(l.name)}</b>
+                      <div className="tool-notes">{tr(l.notes)}</div>
                     </div>
                   </div>
                 ))}
@@ -393,50 +391,50 @@ export function ProfileSettingsDialog({
               <label className="check">
                 <input type="checkbox" checked={advanced.persistSession} onChange={(e) => setAdvanced((s) => ({ ...s, persistSession: e.target.checked }))} />
                 <span>
-                  <b>Keep running when the window closes</b>
-                  <em>The session manager keeps this terminal alive so you can reconnect later. If off, it stops when you close OmniTerminal normally (never on a crash).</em>
+                  <b>{tr('Keep running when the window closes')}</b>
+                  <em>{tr('The session manager keeps this terminal alive so you can reconnect later. If off, it stops when you close OmniTerminal normally (never on a crash).')}</em>
                 </span>
               </label>
               <label className="check">
                 <input type="checkbox" checked={advanced.refreshEnvironment} onChange={(e) => setAdvanced((s) => ({ ...s, refreshEnvironment: e.target.checked }))} />
                 <span>
-                  <b>Refresh Windows environment at launch</b>
-                  <em>Re-read PATH and other variables from the registry, like Windows Terminal, so newly installed tools are found.</em>
+                  <b>{tr('Refresh Windows environment at launch')}</b>
+                  <em>{tr('Re-read PATH and other variables from the registry, like Windows Terminal, so newly installed tools are found.')}</em>
                 </span>
               </label>
               <label className="check">
                 <input type="checkbox" checked={advanced.useBundledConpty} onChange={(e) => setAdvanced((s) => ({ ...s, useBundledConpty: e.target.checked }))} />
                 <span>
-                  <b>Use bundled ConPTY (OpenConsole)</b>
-                  <em>Newer pseudoconsole shipped with the app instead of the one built into Windows.</em>
+                  <b>{tr('Use bundled ConPTY (OpenConsole)')}</b>
+                  <em>{tr('Newer pseudoconsole shipped with the app instead of the one built into Windows.')}</em>
                 </span>
               </label>
               <label className="check">
                 <input type="checkbox" checked={advanced.transcript} onChange={(e) => setAdvanced((s) => ({ ...s, transcript: e.target.checked }))} />
                 <span>
-                  <b>Record output transcript</b>
-                  <em>Writes terminal output to logs\transcript-*.log. Known secrets and token formats are redacted, but output can still contain sensitive data. Off by default.</em>
+                  <b>{tr('Record output transcript')}</b>
+                  <em>{tr('Writes terminal output to logs\\transcript-*.log. Known secrets and token formats are redacted, but output can still contain sensitive data. Off by default.')}</em>
                 </span>
               </label>
               <label className="field">
-                <span>Scrollback lines kept by the session manager</span>
+                <span>{tr('Scrollback lines kept by the session manager')}</span>
                 <input type="number" min={100} max={100000} value={advanced.scrollback} onChange={(e) => setAdvanced((s) => ({ ...s, scrollback: Number(e.target.value) }))} />
               </label>
               <label className="field">
-                <span>Unset inherited variables <em>comma separated</em></span>
+                <span>{tr('Unset inherited variables')} <em>{tr('comma separated')}</em></span>
                 <input value={unsetText} onChange={(e) => setUnsetText(e.target.value)} placeholder="e.g. AWS_PROFILE, HTTP_PROXY" spellCheck={false} />
               </label>
               <div className="kv">
-                <div><span>Terminal ID</span><code>{profile.id}</code></div>
-                <div><span>Session ID</span><code>{session?.sessionId ?? '—'}</code></div>
-                <div><span>Process ID</span><code>{session?.state === 'running' ? session.pid : '—'}</code></div>
-                <div><span>Created</span><code>{fmtDateFull(profile.createdAt)}</code></div>
-                <div><span>Last used</span><code>{fmtDateFull(profile.lastUsedAt)}</code></div>
-                <div><span>Last size</span><code>{profile.lastCols} × {profile.lastRows}</code></div>
+                <div><span>{tr('Terminal ID')}</span><code>{profile.id}</code></div>
+                <div><span>{tr('Session ID')}</span><code>{session?.sessionId ?? '—'}</code></div>
+                <div><span>{tr('Process ID')}</span><code>{session?.state === 'running' ? session.pid : '—'}</code></div>
+                <div><span>{tr('Created')}</span><code>{fmtDateFull(profile.createdAt)}</code></div>
+                <div><span>{tr('Last used')}</span><code>{fmtDateFull(profile.lastUsedAt)}</code></div>
+                <div><span>{tr('Last size')}</span><code>{profile.lastCols} × {profile.lastRows}</code></div>
               </div>
               <div className="row-actions">
-                <button className="btn" onClick={() => void bridge.openPath(profile.dir)}><Icon name="folder" size={14} /> Open profile folder</button>
-                <button className="btn" onClick={() => void bridge.openPath(`${profile.dir}${sep}logs`)}><Icon name="folder" size={14} /> Open logs</button>
+                <button className="btn" onClick={() => void bridge.openPath(profile.dir)}><Icon name="folder" size={14} /> {tr('Open profile folder')}</button>
+                <button className="btn" onClick={() => void bridge.openPath(`${profile.dir}${sep}logs`)}><Icon name="folder" size={14} /> {tr('Open logs')}</button>
               </div>
             </div>
           )}
@@ -516,7 +514,7 @@ function TokenField({ tokenVar, rows, onChange }: { tokenVar: { envVar: string; 
   return (
     <div className="token-field">
       <div className="token-label">
-        <Icon name="lock" size={12} /> {tokenVar.label} <span className="mono">({tokenVar.envVar})</span>
+        <Icon name="lock" size={12} /> {tr(tokenVar.label)} <span className="mono">({tokenVar.envVar})</span>
         {stored && <span className="token-ok"><Icon name="check" size={12} /> {row?.value ? 'will be saved' : 'stored'}</span>}
       </div>
       <div className="input-with-btn">
@@ -529,12 +527,12 @@ function TokenField({ tokenVar, rows, onChange }: { tokenVar: { envVar: string; 
           onChange={(e) => setValue(e.target.value)}
         />
         {row && (
-          <button className="btn" type="button" title="Remove token from this terminal" onClick={() => onChange(rows.filter((r) => r.key !== row.key))}>
+          <button className="btn" type="button" title={tr('Remove token from this terminal')} onClick={() => onChange(rows.filter((r) => r.key !== row.key))}>
             Remove
           </button>
         )}
       </div>
-      <div className="token-help">{tokenVar.help}</div>
+      <div className="token-help">{tr(tokenVar.help)}</div>
     </div>
   );
 }

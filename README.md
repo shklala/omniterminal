@@ -50,6 +50,28 @@ startup command to pick up the last conversation.
 **More than one shell per terminal.** `Ctrl+Shift+D` (or *Open another*) opens a second shell that shares the same
 accounts and variables, like opening a second window of the same terminal.
 
+**Split panes.** Put up to four terminals side by side in one tab: `Alt+Shift+=` splits right, `Alt+Shift+-` splits
+down, or pick *Split with…* any other terminal from the command palette. Drag the dividers to resize, `Alt+Left` and
+`Alt+Right` move between panes, and the layout survives closing the window. Turn on *Type into all panes*
+(`Ctrl+Shift+B`) to send the same keystrokes to every pane of a tab.
+
+**Workspaces.** Save your open tabs and splits as a workspace ("Client A: API, web and Claude") and reopen the whole set
+from *All Terminals* or the command palette.
+
+**See who is signed in where.** `Ctrl+Shift+I` lists the account each tool in a terminal uses: the Claude account and
+organisation, gcloud account and project, GitHub user, Git identity, Azure subscription, Kubernetes context and which
+tokens are set. It reads the terminal's own files, so it is instant and never shows a token. For tools with an account
+command, *Check with…* runs it inside that terminal.
+
+**Snippets.** Save the commands you type every day and run them with `Ctrl+Shift+S`, in every terminal or only in one.
+
+**Know when it is done.** When a command that took a while finishes in a tab you are not looking at, Windows shows a
+notification and the tab gets a dot. It works in every shell without changing your prompt.
+
+**Per-terminal SSH key.** Turn on *SSH key for this terminal*, create the key with one click and add the public key to
+GitHub or GitLab. Git over SSH, and `ssh`/`scp`/`sftp` in PowerShell, then use only that terminal's key and
+`known_hosts`.
+
 **Administrator when needed.** *Run as Administrator* restarts a terminal with admin rights through Windows' built-in
 `sudo`. If a command fails with "Access is denied", OmniTerminal offers to continue as administrator. Windows always asks
 first.
@@ -57,12 +79,22 @@ first.
 **Themes.** Dark, Light, Midnight and Nord for the app, or follow the Windows setting. Fourteen terminal colour schemes,
 plus a theme editor for your own: every colour, and an optional background picture.
 
-**English and Arabic.** Arabic uses a full right-to-left layout.
+**Six languages.** English, Arabic (full right-to-left layout), Spanish, French, German and Simplified Chinese.
 
 **Suggestions while typing.** In PowerShell, matching commands from that terminal's own history appear in a list as
-you type; pick one with the arrow keys, press `F1` for help on a command. Needs PSReadLine 2.1 or later (PowerShell 7
-has it; on Windows PowerShell run `Install-Module PSReadLine -Scope CurrentUser -Force` once). Tab completion works as
-usual in every shell.
+you type; pick one with the arrow keys, press `F1` for help on a command. PowerShell 7 has this built in. For Windows
+PowerShell, *Settings > General > Turn on for Windows PowerShell* downloads a newer PSReadLine for OmniTerminal's
+terminals only (checked against a known checksum; your normal PowerShell is not changed). Tab completion works as usual
+in every shell.
+
+**Stays out of the way.** Keep OmniTerminal in the notification area when you close the window, and set a system-wide
+shortcut that shows and hides it from anywhere, optionally as a drop-down panel at the top of the screen.
+
+**Updates itself.** New versions download in the background from GitHub Releases. When you choose *Restart and
+install*, running terminals are saved first and reopen with their output afterwards.
+
+**Your shortcuts.** Every shortcut can be changed in *Settings > Keyboard shortcuts*. They match by key position, so they
+work with any keyboard language.
 
 **The rest.**
 - Command palette (`Ctrl+Shift+P`), find in output (`Ctrl+Shift+F`) and zoom.
@@ -73,6 +105,12 @@ usual in every shell.
 
 | | |
 |---|---|
+| <img src="docs/screenshots/split-broadcast.png" alt="Two terminals side by side, typing into both" /> | <img src="docs/screenshots/accounts.png" alt="Accounts signed in to a terminal" /> |
+| Split panes, typing into both at once | Who each tool is signed in as |
+| <img src="docs/screenshots/workspaces.png" alt="All terminals with a saved workspace" /> | <img src="docs/screenshots/snippets.png" alt="Running a snippet" /> |
+| All terminals and a saved workspace | Snippets |
+| <img src="docs/screenshots/shortcuts.png" alt="Keyboard shortcut settings" /> | <img src="docs/screenshots/window-settings.png" alt="Window and startup settings" /> |
+| Your own keyboard shortcuts | Tray, global shortcut and drop-down mode |
 | <img src="docs/screenshots/dashboard.png" alt="All terminals" /> | <img src="docs/screenshots/custom-theme.png" alt="Custom theme with a background picture" /> |
 | All terminals, with memory use | A custom theme with a background picture |
 | <img src="docs/screenshots/theme-editor.png" alt="Theme editor" /> | <img src="docs/screenshots/tools.png" alt="Per-terminal tools" /> |
@@ -114,11 +152,19 @@ Keyboard shortcuts:
 | `Ctrl+Shift+T` | New terminal |
 | `Ctrl+Shift+A` | All terminals |
 | `Ctrl+Shift+D` | Another shell of the current terminal |
-| `Ctrl+Shift+W` | Close the tab (the terminal keeps running) |
+| `Alt+Shift+=`, `Alt+Shift+-` | Split right, split down |
+| `Alt+Left`, `Alt+Right` | Previous, next pane |
+| `Ctrl+Shift+B` | Type into all panes of the tab |
+| `Ctrl+Shift+S` | Run a snippet |
+| `Ctrl+Shift+I` | Accounts in this terminal |
+| `Ctrl+Shift+W` | Close the pane or tab (the terminal keeps running) |
 | `Ctrl+Tab`, `Ctrl+Alt+1` to `9` | Switch tabs |
 | `Ctrl+Shift+F` | Find in output |
 | `Ctrl+=`, `Ctrl+-`, `Ctrl+0` | Zoom |
+| `Ctrl+,` | Settings |
 | `Ctrl+C`, `Ctrl+V` | Copy when text is selected (otherwise interrupt), paste |
+
+All of these except `Ctrl+Alt+1` to `9` and copy/paste can be changed in *Settings > Keyboard shortcuts*.
 
 ## Supported tools
 
@@ -128,7 +174,7 @@ tab to switch tools on or off, paste tokens, or add your own mapping for anythin
 | Kind | Separate config folder | Per-terminal token |
 |---|---|---|
 | AI coding | Claude Code, Codex | Anthropic and OpenAI API keys, Gemini CLI |
-| Code hosting | Git (including Git Credential Manager logins), GitHub CLI config, GitLab CLI | GitHub token, GitLab token |
+| Code hosting | Git (including Git Credential Manager logins), GitHub CLI config, GitLab CLI, SSH key (Git and PowerShell) | GitHub token, GitLab token |
 | Cloud | gcloud, Azure CLI, AWS CLI config, kubectl, Docker, Helm, Terraform settings, Pulumi, Oracle Cloud | DigitalOcean, HCP Terraform, Pulumi, Azure DevOps |
 | Hosting and deploys | | Supabase, Netlify, Fly.io, Cloudflare, Railway, Heroku, Expo |
 | Developer services | | Stripe, Sentry, ngrok |
@@ -138,7 +184,9 @@ tab to switch tools on or off, paste tokens, or add your own mapping for anythin
 
 What can't be separated, so you know:
 
-- **SSH.** OpenSSH always uses `%USERPROFILE%\.ssh` and the shared ssh-agent.
+- **Plain `ssh` outside PowerShell, and the ssh-agent.** With *SSH key for this terminal*, Git (in every shell) and
+  `ssh`/`scp`/`sftp` in PowerShell use the terminal's own key. Plain `ssh` in Command Prompt and Git Bash, and the
+  Windows ssh-agent service, are still shared.
 - **GitHub CLI's default login.** It goes into Windows Credential Manager, which is shared. Use the token field or
   `gh auth login --insecure-storage` instead.
 - **AWS SSO token cache.** It always lives in your user folder.
@@ -170,14 +218,24 @@ start time match the record, so a reused PID never hits an unrelated program. Se
 built-in engine, WAL mode) with a backup copy. Each terminal also writes a `metadata.json`, which can rebuild the list
 if the database is lost.
 
+**Updates.** The installed app checks GitHub Releases at start-up and every few hours and downloads new versions in the
+background. Before installing, the session manager saves every screen and exits without stopping the record of running
+terminals, so the new version's manager reopens them exactly as it does after a Windows restart. The portable zip does
+not update itself.
+
+**Hardening.** The packaged exe has Electron's fuses set: no `NODE_OPTIONS`, no inspector flags, the app loads only from
+its packed archive and checks that archive's integrity, cookies are encrypted and `file://` pages get no extra rights. The
+named pipe only answers after the per-run token is presented, and drops a silent client after five seconds.
+
 **Data on disk.**
 
 ```
 %LOCALAPPDATA%\OmniTerminal\
   omniterminal.db             terminals, settings, session records (no secrets)
   themes\                     background pictures for custom themes
+  modules\                    PSReadLine for suggestions (only if you turned it on)
   profiles\<terminal>\
-    config\                   claude, gcloud, github, git, azure, npm, ...
+    config\                   claude, gcloud, github, git, azure, npm, ssh, ...
     credentials\              DPAPI-encrypted variables and tokens
     history\  logs\  cache\   history, logs, last screen snapshot
 ```
@@ -206,8 +264,8 @@ git clone https://github.com/shklala/omniterminal.git
 cd omniterminal
 npm install
 npm run dev        # development build with its own data folder
-npm test           # 93 unit and integration tests
-npm run test:e2e   # drives the real app window
+npm test           # 104 unit and integration tests
+npm run test:e2e   # 11 tests that drive the real app window
 npm run dist       # installer and portable zip in .\release
 ```
 
@@ -220,9 +278,11 @@ Built with:
 
 The tests run real ConPTY shells, real DPAPI encryption and a real background manager over the named pipe. They cover:
 
-- separate accounts across simultaneous terminals
+- separate accounts across simultaneous terminals, and reading who is signed in where
 - reconnecting after the window closes
-- crash and restart recovery with restored output
+- crash, restart and update recovery with restored output
+- split panes, broadcast typing, workspaces, snippets and custom shortcuts in the real window
+- per-terminal SSH keys checked with Windows OpenSSH
 - several shells per terminal, administrator commands, custom themes
 - path and secret safety
 
@@ -237,17 +297,16 @@ The tests run real ConPTY shells, real DPAPI encryption and a real background ma
 | Terminal profiles | `src/daemon/profiles/` |
 | Secrets | `src/daemon/credentials/` |
 | Tool list | `src/shared/tools.ts` |
-| Translations | `src/renderer/i18n.ts` |
+| Translations | `src/renderer/i18n.ts`, `src/renderer/locales/` (`node scripts/i18n-keys.mjs` lists missing strings) |
 | Windows integration | `src/daemon/windows/`, `src/main/` |
 
 </details>
 
 ## Planned
 
-- Split panes
-- Code signing and automatic updates
-- Per-terminal SSH keys
-- More languages
+- Code signing, so Windows SmartScreen stops warning on install
+- A per-terminal ssh-agent
+- More languages (contributions welcome: copy a file in `src/renderer/locales/`)
 
 ## License
 

@@ -88,7 +88,7 @@ export function Sidebar({
         <div className="brand-mark"><Icon name="terminal" size={15} /></div>
         <span>OmniTerminal</span>
       </div>
-      <button className="btn btn-primary new-btn" onClick={onNew} title="New Terminal (Ctrl+Shift+T)">
+      <button className="btn btn-primary new-btn" onClick={onNew} title={t('New Terminal')}>
         <Icon name="plus" size={16} /> {t('New Terminal')}
       </button>
       <button className={cx('nav-item', active === 'dashboard' && 'active')} onClick={onDashboard}>
@@ -236,7 +236,7 @@ export function TabBar({
               <span className="tab-color" style={{ background: p.color }} />
               <StatusDot status={st} />
               <span className="tab-name">{n > 1 ? `${p.name} ${n}` : p.name}</span>
-              {(panes.get(id) ?? 0) > 0 && <span className="tab-panes" title={t('Split into {n} panes', { n: (panes.get(id) ?? 0) + 1 })}>+{panes.get(id)}</span>}
+              {(panes.get(id) ?? 0) > 0 && <span className="tab-panes" dir="ltr" title={t('Split into {n} panes', { n: (panes.get(id) ?? 0) + 1 })}>+{panes.get(id)}</span>}
               <ActivityBadge kind={activity.get(id)} />
               <button
                 className="tab-close"
@@ -329,7 +329,7 @@ export function TopBar({
             <span className="mono" title={profile.cwd || 'User folder'}>{profile.cwd || '%USERPROFILE%'}</span>
             {session && (
               <>
-                    <span className="mono" title="Session ID">{session.sessionId.slice(0, 8)}</span>
+                    <span className="mono" title={t('Session ID')}>{session.sessionId.slice(0, 8)}</span>
               </>
             )}
             {running && stats && (

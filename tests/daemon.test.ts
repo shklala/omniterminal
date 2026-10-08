@@ -83,6 +83,16 @@ describe('session manager process (named pipe)', () => {
     expect(await closed2).toBe(true);
   });
 
+  it('sends nothing to a client that has not presented the token, then drops it', async () => {
+    const sock = net.connect(paths.pipe);
+    await new Promise((r) => sock.once('connect', r));
+    let received = 0;
+    sock.on('data', (d) => (received += d.length));
+    const closedAt = await new Promise<number>((r) => sock.once('close', () => r(Date.now())));
+    expect(received).toBe(0);
+    expect(closedAt).toBeGreaterThan(0);
+  }, 15000);
+
   it('creates a terminal, launches it and streams output', async () => {
     const { client } = await gui();
     profile = await client.call<Profile>('profiles.create', { profile: { name: 'Claude-01', shellId: 'cmd' } });

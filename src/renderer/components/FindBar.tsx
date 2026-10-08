@@ -79,9 +79,9 @@ export function FindBar({ host, onClose }: { host: TerminalHost; onClose: () => 
       <span className="find-count">{result ? (result.count ? `${result.index + 1}/${result.count}` : t('No results')) : ''}</span>
       <button className={cx('find-toggle', caseSensitive && 'on')} title={t('Match case')} onClick={() => setCaseSensitive((v) => !v)}>Aa</button>
       <button className={cx('find-toggle', regex && 'on')} title={t('Regular expression')} onClick={() => setRegex((v) => !v)}>.*</button>
-      <button className="icon-btn small" title="Previous (Shift+Enter)" onClick={() => find('prev')}>↑</button>
-      <button className="icon-btn small" title="Next (Enter)" onClick={() => find('next')}>↓</button>
-      <button className="icon-btn small" title="Close (Esc)" onClick={close}><Icon name="x" size={13} /></button>
+      <button className="icon-btn small" title={t('Previous (Shift+Enter)')} onClick={() => find('prev')}>↑</button>
+      <button className="icon-btn small" title={t('Next (Enter)')} onClick={() => find('next')}>↓</button>
+      <button className="icon-btn small" title={t('Close (Esc)')} onClick={close}><Icon name="x" size={13} /></button>
     </div>
   );
 }

@@ -76,14 +76,15 @@ export class Desktop {
       this.tray.on('click', () => this.show());
     }
     const hk = this.settings?.globalHotkey ? `\t${this.settings.globalHotkey}` : '';
+    const L = TRAY_TEXT[this.settings?.language ?? 'en'] ?? TRAY_TEXT.en;
     this.tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: `Show OmniTerminal${hk}`, click: () => this.show() },
-        { label: 'New terminal…', click: () => { this.show(); this.host.command('new-terminal'); } },
+        { label: `${L[0]}${hk}`, click: () => this.show() },
+        { label: L[1], click: () => { this.show(); this.host.command('new-terminal'); } },
         { type: 'separator' },
         // app.quit() goes through the normal goodbye to the session manager (main.ts before-quit).
-        { label: 'Close window (terminals keep running)', click: () => app.quit() },
-        { label: 'Exit completely…', click: () => { this.show(); this.host.command('exit'); } },
+        { label: L[2], click: () => app.quit() },
+        { label: L[3], click: () => { this.show(); this.host.command('exit'); } },
       ]),
     );
   }
@@ -207,6 +208,16 @@ export class Desktop {
     this.updater.quitAndInstall(true, true);
   }
 }
+
+/** Tray menu: show, new terminal, close window, exit completely. */
+const TRAY_TEXT: Record<string, [string, string, string, string]> = {
+  en: ['Show OmniTerminal', 'New terminal…', 'Close window (terminals keep running)', 'Exit completely…'],
+  ar: ['إظهار OmniTerminal', 'طرفية جديدة…', 'إغلاق النافذة (تستمر الطرفيات في العمل)', 'الخروج الكامل…'],
+  es: ['Mostrar OmniTerminal', 'Nuevo terminal…', 'Cerrar ventana (los terminales siguen en ejecución)', 'Salir por completo…'],
+  fr: ['Afficher OmniTerminal', 'Nouveau terminal…', 'Fermer la fenêtre (les terminaux continuent)', 'Quitter complètement…'],
+  de: ['OmniTerminal anzeigen', 'Neues Terminal…', 'Fenster schließen (Terminals laufen weiter)', 'Vollständig beenden…'],
+  zh: ['显示 OmniTerminal', '新建终端…', '关闭窗口（终端继续运行）', '完全退出…'],
+};
 
 /** "Ctrl+Alt+T" -> Electron accelerator ("Ctrl+Alt+T"; Win -> Super). */
 export function toAccelerator(combo: string): string {

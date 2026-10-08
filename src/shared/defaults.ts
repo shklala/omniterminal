@@ -1,6 +1,6 @@
 import type { AdvancedSettings, AppSettings, Appearance } from './types';
 
-export const APP_VERSION = '1.2.0';
+export const APP_VERSION = '1.3.0';
 export const PROTOCOL_VERSION = 1;
 
 export const DEFAULT_APPEARANCE: Appearance = {
