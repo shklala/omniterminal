@@ -79,8 +79,10 @@ usual in every shell.
 | The theme editor | Per-terminal tools and tokens |
 | <img src="docs/screenshots/admin-prompt.png" alt="Administrator prompt" /> | <img src="docs/screenshots/second-shell.png" alt="Second shell of the same terminal" /> |
 | Offering administrator rights after "Access is denied" | A second shell of the same terminal |
-| <img src="docs/screenshots/light.png" alt="Light theme" /> | <img src="docs/screenshots/arabic.png" alt="Arabic interface" /> |
-| Light theme | Arabic, right to left |
+| <img src="docs/screenshots/light.png" alt="Light theme" /> | <img src="docs/screenshots/midnight.png" alt="Midnight theme" /> |
+| Light theme | Midnight theme |
+| <img src="docs/screenshots/arabic.png" alt="Arabic interface" /> | |
+| Arabic, right to left | |
 
 ## Install
 
@@ -102,7 +104,7 @@ or later, which includes `sudo`.
 2. It opens straight away with its own config folders ready.
 3. Sign in to your tools inside it. Other terminals are not affected.
 4. Close the window whenever you like. The terminals keep running until you stop them or choose
-   **Settings > Exit completely**.
+   **Exit completely** in the application settings (gear icon).
 
 Keyboard shortcuts:
 
@@ -110,6 +112,7 @@ Keyboard shortcuts:
 |---|---|
 | `Ctrl+Shift+P` | Command palette |
 | `Ctrl+Shift+T` | New terminal |
+| `Ctrl+Shift+A` | All terminals |
 | `Ctrl+Shift+D` | Another shell of the current terminal |
 | `Ctrl+Shift+W` | Close the tab (the terminal keeps running) |
 | `Ctrl+Tab`, `Ctrl+Alt+1` to `9` | Switch tabs |
@@ -119,14 +122,14 @@ Keyboard shortcuts:
 
 ## Supported tools
 
-Each terminal points these tools at its own folder or token. The app shows the same information under
-**Settings > Tools** for every terminal, and you can add your own mappings for anything with a config-folder variable.
+Each terminal points these tools at its own folder or token. Open a terminal's **Settings** (top bar) and the **Tools**
+tab to switch tools on or off, paste tokens, or add your own mapping for anything with a config-folder variable.
 
 | Kind | Separate config folder | Per-terminal token |
 |---|---|---|
 | AI coding | Claude Code, Codex | Anthropic and OpenAI API keys, Gemini CLI |
 | Code hosting | Git (including Git Credential Manager logins), GitHub CLI config, GitLab CLI | GitHub token, GitLab token |
-| Cloud | gcloud, Azure CLI, AWS CLI config, kubectl, Helm, Terraform settings, Pulumi, Oracle Cloud | DigitalOcean, HCP Terraform, Pulumi, Azure DevOps |
+| Cloud | gcloud, Azure CLI, AWS CLI config, kubectl, Docker, Helm, Terraform settings, Pulumi, Oracle Cloud | DigitalOcean, HCP Terraform, Pulumi, Azure DevOps |
 | Hosting and deploys | | Supabase, Netlify, Fly.io, Cloudflare, Railway, Heroku, Expo |
 | Developer services | | Stripe, Sentry, ngrok |
 | Packages | npm, pip | Cargo (crates.io), Deno |
