@@ -133,7 +133,7 @@ ${(await c.call<string>('sessions.text', { profileId })).trim()}`);
     // Administrator: an elevated session shows the badge; a normal one offers "Continue as Administrator".
     const st = await c.call<{ managerElevated: boolean }>('system.elevation');
     if (st.managerElevated) await page.locator('.admin-pill').waitFor({ timeout: 5000 });
-    else await page.getByRole('button', { name: 'Admin', exact: true }).waitFor({ timeout: 5000 });
+    else await page.getByRole('button', { name: 'Run as Administrator', exact: true }).waitFor({ timeout: 5000 });
 
     // Dashboard shows the running terminal; second terminal created from dashboard is independent.
     await page.getByRole('button', { name: /All Terminals/ }).click();

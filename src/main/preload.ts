@@ -35,6 +35,25 @@ const api = {
   enableSudo: (): Promise<{ ok: boolean; status: unknown }> => ipcRenderer.invoke('omni:enable-sudo'),
   openElevatedWindow: (cwd: string): Promise<boolean> => ipcRenderer.invoke('omni:open-elevated-window', cwd),
   focusWindow: (): Promise<void> => ipcRenderer.invoke('omni:focus-window'),
+  updateStatus: () => ipcRenderer.invoke('omni:update-status'),
+  checkForUpdates: () => ipcRenderer.invoke('omni:update-check'),
+  installUpdate: (): Promise<void> => ipcRenderer.invoke('omni:update-install'),
+  onUpdateStatus(handler: (s: unknown) => void): () => void {
+    const listener = (_e: IpcRendererEvent, s: unknown) => handler(s);
+    ipcRenderer.on('omni:update-status', listener);
+    return () => ipcRenderer.removeListener('omni:update-status', listener);
+  },
+  /** Commands from the tray menu ("new-terminal", "exit") and notices ("shortcut already in use"). */
+  onCommand(handler: (name: string) => void): () => void {
+    const listener = (_e: IpcRendererEvent, name: string) => handler(name);
+    ipcRenderer.on('omni:command', listener);
+    return () => ipcRenderer.removeListener('omni:command', listener);
+  },
+  onNotice(handler: (text: string) => void): () => void {
+    const listener = (_e: IpcRendererEvent, text: string) => handler(text);
+    ipcRenderer.on('omni:notice', listener);
+    return () => ipcRenderer.removeListener('omni:notice', listener);
+  },
 };
 
 contextBridge.exposeInMainWorld('omni', api);

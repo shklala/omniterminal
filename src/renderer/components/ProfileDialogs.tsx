@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DEFAULT_APPEARANCE, PROFILE_COLORS } from '../../shared/defaults';
 import { TOOL_GROUPS, isToolEnabled } from '../../shared/tools';
 import type { ToolDefinition } from '../../shared/types';
-import type { AppState, CustomMapping, CustomTheme, Profile, ProfileInput, SessionInfo } from '../../shared/types';
+import type { AppState, CustomMapping, CustomTheme, Profile, ProfileInput, SessionInfo, SshKeyStatus } from '../../shared/types';
 import { api, bridge, errorMessage } from '../api';
 import { THEMES, findCustomTheme, getCustomThemes, getTheme, setCustomThemes } from '../themes';
 import { ThemeEditor } from './ThemeEditor';
@@ -178,14 +178,16 @@ export function ProfileSettingsDialog({
   session,
   onClose,
   onSaved,
+  initialTab = 'general',
 }: {
   state: AppState;
   profile: Profile;
   session: SessionInfo | undefined;
   onClose: () => void;
   onSaved: (p: Profile, needsRestart: boolean) => void;
+  initialTab?: Tab;
 }) {
-  const [tab, setTab] = useState<Tab>('general');
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [general, setGeneral] = useState<GeneralValues>({
     name: profile.name,
     description: profile.description,
@@ -311,14 +313,16 @@ export function ProfileSettingsDialog({
               <h4 className="tool-group">{tr(g.label)}</h4>
               <div className="tool-list">
                 {g.tools.map((t) => {
-                  const enabled = t.mappings.length === 0 || isToolEnabled(tools, t);
+                  // Tools without folder mappings are always "on" (token fields only), except the SSH key tool.
+                  const switchable = t.mappings.length > 0 || t.id === 'ssh-key';
+                  const enabled = !switchable || isToolEnabled(tools, t);
                   const tokenSet = (t.tokenVars ?? []).some((tv) => env.some((r) => r.name === tv.envVar && (r.value || r.hasValue)));
                   const level = tokenSet ? 'full' : t.isolation;
                   return (
                     <div key={t.id} className={cx('tool-card', !enabled && 'disabled')}>
                       <div className="tool-head">
-                        {t.mappings.length > 0 && (
-                          <label className="switch" title="Redirect this tool into the terminal's private folder">
+                        {switchable && (
+                          <label className="switch" title={tr("Redirect this tool into the terminal's private folder")}>
                             <input type="checkbox" checked={enabled} onChange={(e) => setTools((s) => ({ ...s, [t.id]: e.target.checked }))} />
                             <span className="slider" />
                           </label>
@@ -333,7 +337,8 @@ export function ProfileSettingsDialog({
                           {m.envVar} = {m.kind === 'value' ? (m.value ?? '').replace('{slug}', profile.slug) : toolPath(m.path)}
                         </div>
                       ))}
-                      <div className="tool-notes">{t.notes}</div>
+                      <div className="tool-notes">{tr(t.notes)}</div>
+                      {t.id === 'ssh-key' && enabled && <SshKeyPanel profileId={profile.id} />}
                       {(t.tokenVars ?? []).map((tv) => (
                         <TokenField key={tv.envVar} tokenVar={tv} rows={env} onChange={setEnv} />
                       ))}
@@ -443,6 +448,64 @@ export function ProfileSettingsDialog({
 }
 
 /** Write-only token input stored as an encrypted secret variable of this terminal. */
+/** Create this terminal's SSH key and copy its public key. */
+function SshKeyPanel({ profileId }: { profileId: string }) {
+  const [status, setStatus] = useState<SshKeyStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    void bridge.invoke<SshKeyStatus>('ssh.status', { id: profileId }).then(setStatus).catch((e) => setError(errorMessage(e)));
+  }, [profileId]);
+  if (!status) return error ? <div className="form-error">{error}</div> : null;
+  return (
+    <div className="ssh-panel">
+      {status.hasKey ? (
+        <>
+          <div className="ssh-pub">
+            <code className="mono">{status.publicKey ?? tr('(public key file missing)')}</code>
+            {status.publicKey && (
+              <button
+                className="btn btn-sm"
+                onClick={async () => {
+                  await bridge.clipboardWrite(status.publicKey ?? '');
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                }}
+              >
+                <Icon name={copied ? 'check' : 'copy'} size={13} /> {copied ? tr('Copied') : tr('Copy public key')}
+              </button>
+            )}
+          </div>
+          <p className="hint">{tr('Add the public key to GitHub (Settings > SSH and GPG keys) or GitLab. Save, then restart the terminal to use it.')}</p>
+        </>
+      ) : (
+        <>
+          <p className="hint">{tr('This terminal has no SSH key yet, so it still uses your normal one.')}</p>
+          <button
+            className="btn btn-sm"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                setStatus(await bridge.invoke<SshKeyStatus>('ssh.createKey', { id: profileId }));
+              } catch (e) {
+                setError(errorMessage(e));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <Icon name="key" size={13} /> {busy ? tr('Creating…') : tr('Create SSH key for this terminal')}
+          </button>
+        </>
+      )}
+      {error && <div className="form-error">{error}</div>}
+    </div>
+  );
+}
+
 function TokenField({ tokenVar, rows, onChange }: { tokenVar: { envVar: string; label: string; help: string }; rows: EnvRow[]; onChange: (rows: EnvRow[]) => void }) {
   const row = rows.find((r) => r.name === tokenVar.envVar);
   const stored = !!row && (row.hasValue || !!row.value);

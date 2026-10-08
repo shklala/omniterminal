@@ -80,7 +80,8 @@ export function Sidebar({
     setDropTarget(null);
   };
   const shown = profiles.filter((p) => p.name.toLowerCase().includes(filter.toLowerCase()));
-  const runningCount = [...sessions.values()].filter((s) => s.state === 'running').length;
+  // Terminals with at least one running shell (extra shells of the same terminal count once).
+  const runningCount = new Set([...sessions.values()].filter((s) => s.state === 'running').map((s) => s.profileId)).size;
   return (
     <aside className="sidebar">
       <div className="brand drag">
@@ -202,7 +203,10 @@ export function TabBar({
   onNew,
   activity,
   titles,
+  panes,
 }: {
+  /** Number of extra split panes per tab. */
+  panes: Map<string, number>;
   tabs: string[];
   profiles: Map<string, Profile>;
   sessions: Map<string, SessionInfo>;
@@ -232,6 +236,7 @@ export function TabBar({
               <span className="tab-color" style={{ background: p.color }} />
               <StatusDot status={st} />
               <span className="tab-name">{n > 1 ? `${p.name} ${n}` : p.name}</span>
+              {(panes.get(id) ?? 0) > 0 && <span className="tab-panes" title={t('Split into {n} panes', { n: (panes.get(id) ?? 0) + 1 })}>+{panes.get(id)}</span>}
               <ActivityBadge kind={activity.get(id)} />
               <button
                 className="tab-close"
@@ -270,7 +275,13 @@ export function TopBar({
   admin,
   onRunAsAdmin,
   onRestartNormal,
+  more,
+  broadcasting,
 }: {
+  /** Extra terminal actions behind the "More" button (accounts, split, broadcast, snippets…). */
+  more: (MenuItem | 'sep')[];
+  /** Input typed here also goes to the other panes of this tab. */
+  broadcasting: boolean;
   /**
    * 'all': the whole app runs as administrator; 'session': this terminal was started as administrator;
    * 'available': can be restarted as administrator; null: not applicable (e.g. WSL).
@@ -292,6 +303,7 @@ export function TopBar({
   onStart: () => void;
 }) {
   const running = session?.state === 'running';
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
   return (
     <div className="topbar">
       <div className="topbar-info">
@@ -303,6 +315,11 @@ export function TopBar({
             {(admin === 'all' || admin === 'session') && (
               <span className="admin-pill" title={t('This terminal runs with administrator rights')}>
                 <Icon name="shield" size={11} /> {t('Administrator')}
+              </span>
+            )}
+            {broadcasting && (
+              <span className="broadcast-pill" title={t('What you type goes to every pane in this tab')}>
+                <Icon name="broadcast" size={11} /> {t('Typing into all panes')}
               </span>
             )}
             {programTitle && <span className="program-title" title={t('Title set by the running program')}>{programTitle}</span>}
@@ -343,7 +360,19 @@ export function TopBar({
         <button className="btn btn-sm" onClick={onRestart} title={t('Restart the shell')}><Icon name="restart" size={14} /> {t('Restart')}</button>
         <button className="btn btn-sm btn-danger-ghost" onClick={onStop} disabled={!running} title={t('Stop the shell and its processes')}><Icon name="stop" size={14} /> {t('Stop')}</button>
         <button className="btn btn-sm" onClick={onSettings} title={t('Terminal settings')}><Icon name="settings" size={14} /> {t('Settings')}</button>
+        <button
+          className="icon-btn"
+          title={t('More: accounts, split, snippets…')}
+          aria-label={t('More actions')}
+          onClick={(e) => {
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setMenuAt({ x: r.right - 240, y: r.bottom + 4 });
+          }}
+        >
+          <Icon name="more" size={16} />
+        </button>
       </div>
+      {menuAt && <ContextMenu x={menuAt.x} y={menuAt.y} items={more} onClose={() => setMenuAt(null)} />}
     </div>
   );
 }

@@ -9,7 +9,7 @@ export interface PaletteItem {
   hint?: string;
   icon: string;
   color?: string;
-  group: 'Terminals' | 'Actions';
+  group: 'Terminals' | 'Actions' | 'Snippets' | 'Workspaces';
   run: () => void;
 }
 
@@ -34,7 +34,9 @@ export function fuzzyScore(query: string, text: string): number | null {
 }
 
 /** Ctrl+Shift+P / Ctrl+K: jump to any terminal or run any action by typing. */
-export function CommandPalette({ items, onClose }: { items: PaletteItem[]; onClose: () => void }) {
+const GROUP_LABEL: Record<PaletteItem['group'], string> = { Terminals: 'Terminal', Actions: 'Action', Snippets: 'Snippet', Workspaces: 'Workspace' };
+
+export function CommandPalette({ items, onClose, placeholder, empty }: { items: PaletteItem[]; onClose: () => void; placeholder?: string; empty?: string }) {
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -66,7 +68,7 @@ export function CommandPalette({ items, onClose }: { items: PaletteItem[]; onClo
           <Icon name="search" size={15} />
           <input
             autoFocus
-            placeholder={t('Jump to a terminal or run a command…')}
+            placeholder={placeholder ?? t('Jump to a terminal or run a command…')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -86,7 +88,7 @@ export function CommandPalette({ items, onClose }: { items: PaletteItem[]; onClo
           <kbd>Esc</kbd>
         </div>
         <div className="palette-list" ref={listRef}>
-          {results.length === 0 && <div className="palette-empty">{t('No matches')}</div>}
+          {results.length === 0 && <div className="palette-empty">{items.length === 0 && empty ? empty : t('No matches')}</div>}
           {results.map((it, i) => (
             <button
               key={it.id}
@@ -99,7 +101,7 @@ export function CommandPalette({ items, onClose }: { items: PaletteItem[]; onClo
               {it.color ? <span className="profile-color" style={{ background: it.color }} /> : <Icon name={it.icon} size={14} />}
               <span className="palette-label">{it.label}</span>
               {it.hint && <span className="palette-hint">{it.hint}</span>}
-              <span className="palette-group">{it.group === 'Terminals' ? t('Terminal') : t('Action')}</span>
+              <span className="palette-group">{t(GROUP_LABEL[it.group])}</span>
             </button>
           ))}
         </div>

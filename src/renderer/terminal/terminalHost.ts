@@ -49,6 +49,18 @@ export class TerminalHost {
   private lastAdminHint = 0;
   /** Global shortcuts handled by the app (returns true if consumed). */
   onAppShortcut: (e: KeyboardEvent) => boolean = () => false;
+  /** The terminal got keyboard focus (used to track the focused pane of a split tab). */
+  onFocus: () => void = () => undefined;
+  /** Everything the user types or pastes (used to mirror input to other panes when broadcasting). */
+  onUserInput: (data: string) => void = () => undefined;
+  /** A command that ran at least `notifyAfterMs` finished (the prompt came back). */
+  onCommandDone: (durationMs: number) => void = () => undefined;
+  /** Shared by all terminals; 0 turns the "command finished" detection off. */
+  static notifyAfterMs = 15_000;
+  /** The command line when Enter was pressed, and when. */
+  private pendingCommand: { line: string; at: number } | null = null;
+  private lastOutputAt = 0;
+  private idleTimer: number | null = null;
 
   constructor(readonly profileId: string, appearance: Appearance, scrollback = 5000) {
     this.baseFontSize = appearance.fontSize;
@@ -111,6 +123,8 @@ export class TerminalHost {
   private input(data: string): void {
     if (this.state === 'attached') {
       bridge.write(this.profileId, data);
+      this.onUserInput(data);
+      if (data.includes('\r')) this.noteEnter();
     } else if (this.state === 'connecting') {
       this.pendingInput += data;
     } else if (this.state === 'exited' && (data === '\r' || data === '\n')) {
@@ -143,6 +157,45 @@ export class TerminalHost {
     return true;
   }
 
+  /** Input mirrored from another pane (broadcast). Never re-broadcast. */
+  sendInput(data: string): void {
+    if (this.state !== 'attached') return;
+    bridge.write(this.profileId, data);
+    if (data.includes('\r')) this.noteEnter();
+  }
+
+  /** Full logical line at the cursor (joins wrapped rows), up to the cursor. */
+  private cursorLine(): string {
+    const buf = this.term.buffer.active;
+    let y = buf.baseY + buf.cursorY;
+    let text = buf.getLine(y)?.translateToString(true, 0, buf.cursorX) ?? '';
+    while (y > 0 && buf.getLine(y)?.isWrapped) {
+      y--;
+      text = (buf.getLine(y)?.translateToString(false) ?? '') + text;
+    }
+    return text;
+  }
+
+  private noteEnter(): void {
+    if (this.term.buffer.active.type !== 'normal') return; // full-screen programs (vim, claude) manage themselves
+    this.pendingCommand = { line: this.cursorLine(), at: Date.now() };
+  }
+
+  /**
+   * After output goes quiet, a command is "done" when the prompt is back: the cursor line is the
+   * start of the line where Enter was pressed (the prompt without the command). Works in any shell
+   * without changing its prompt.
+   */
+  private checkCommandDone(): void {
+    const cmd = this.pendingCommand;
+    if (!cmd || this.term.buffer.active.type !== 'normal') return;
+    const prompt = this.cursorLine().trimEnd();
+    if (!prompt || !cmd.line.trimEnd().startsWith(prompt) || cmd.line.trimEnd() === prompt) return;
+    this.pendingCommand = null;
+    const took = this.lastOutputAt - cmd.at;
+    if (TerminalHost.notifyAfterMs > 0 && took >= TerminalHost.notifyAfterMs) this.onCommandDone(took);
+  }
+
   copySelection(): void {
     const text = this.term.getSelection();
     if (text) void bridge.clipboardWrite(text);
@@ -163,6 +216,7 @@ export class TerminalHost {
     if (!this.opened) {
       this.term.open(this.el);
       this.opened = true;
+      this.term.textarea?.addEventListener('focus', () => this.onFocus());
       if (this.visible) this.enableWebgl();
       this.observer = new ResizeObserver(() => this.scheduleFit());
       this.observer.observe(this.el);
@@ -217,6 +271,11 @@ export class TerminalHost {
       this.activity = 'output';
       this.onActivity('output');
     }
+  }
+
+  /** Marks the tab as wanting attention (e.g. a long command finished in the background). */
+  flagAttention(): void {
+    this.markActivity('bell');
   }
 
   /** Ctrl+= / Ctrl+- / Ctrl+0 zoom (per tab, not saved). */
@@ -340,6 +399,12 @@ export class TerminalHost {
     if (this.state !== 'attached' || sessionId !== this.sessionId) return;
     this.term.write(data);
     this.markActivity('output');
+    if (this.pendingCommand) {
+      this.lastOutputAt = Date.now();
+      if (this.idleTimer) window.clearTimeout(this.idleTimer);
+      // xterm parses writes asynchronously; check once output has been quiet for a moment.
+      this.idleTimer = window.setTimeout(() => this.checkCommandDone(), 1200);
+    }
     if (Date.now() - this.lastAdminHint > 60_000 && data.length < 64_000 && looksLikeAdminNeeded(data)) {
       this.lastAdminHint = Date.now();
       this.onNeedsAdmin();
@@ -371,6 +436,7 @@ export class TerminalHost {
   }
 
   dispose(detach = true): void {
+    if (this.idleTimer) window.clearTimeout(this.idleTimer);
     if (detach && this.state === 'attached') void api.detach(this.profileId).catch(() => undefined);
     this.observer?.disconnect();
     this.webgl?.dispose();

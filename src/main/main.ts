@@ -10,6 +10,8 @@ import { getAppPaths } from '../shared/paths';
 import { isPathInside } from '../shared/validation';
 import { DaemonBridge } from './daemonBridge';
 import { DAEMON_ONLY_FLAG, getAutostart, setAutostart } from './windowsIntegration';
+import { Desktop } from './desktop';
+import type { AppSettings } from '../shared/types';
 
 const paths = getAppPaths();
 const appDir = app.getAppPath();
@@ -17,6 +19,35 @@ const bridge = new DaemonBridge(paths, DaemonBridge.spawnSpecFor(process.execPat
 const daemonOnly = process.argv.includes(DAEMON_ONLY_FLAG);
 let win: BrowserWindow | null = null;
 let quitting = false;
+
+const send = (channel: string, ...args: unknown[]) => {
+  if (win && !win.isDestroyed()) win.webContents.send(channel, ...args);
+};
+
+const desktop = new Desktop({
+  getWindow: () => win,
+  createWindow: () => createWindow(),
+  command: (name) => send('omni:command', name),
+  notice: (text) => send('omni:notice', text),
+  markQuitting: () => (quitting = true),
+  iconPath: path.join(appDir, 'build', 'icon.ico'),
+  async handoffSessions() {
+    // The session manager saves every screen and exits, leaving terminals recorded as running;
+    // the updated version's manager restores them on its first start.
+    await bridge.call('daemon.handoff').catch(() => undefined);
+    const deadline = Date.now() + 8000;
+    while (Date.now() < deadline && fs.existsSync(paths.daemonInfo)) await new Promise((r) => setTimeout(r, 150));
+  },
+});
+desktop.onUpdateStatus = (s) => send('omni:update-status', s);
+
+async function refreshDesktopSettings(): Promise<void> {
+  try {
+    desktop.apply(await bridge.call<AppSettings>('settings.get'));
+  } catch {
+    /* manager not connected yet */
+  }
+}
 
 app.setAppUserModelId('com.omniterminal.app');
 // Dev/test instances (custom OMNITERMINAL_HOME) get their own Chromium profile and single-instance lock.
@@ -27,12 +58,7 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on('second-instance', (_e, argv) => {
     if (argv.includes(DAEMON_ONLY_FLAG)) return;
-    if (!win) createWindow();
-    else {
-      if (win.isMinimized()) win.restore();
-      win.show();
-      win.focus();
-    }
+    desktop.show();
   });
   void app.whenReady().then(onReady);
 }
@@ -51,7 +77,7 @@ function loadWindowState(): WindowState {
 }
 
 function saveWindowState(): void {
-  if (!win) return;
+  if (!win || desktop.inDropDown) return; // the drop-down panel's size is not the normal window size
   try {
     const b = win.getNormalBounds();
     fs.mkdirSync(paths.home, { recursive: true });
@@ -86,7 +112,14 @@ function createWindow(): void {
   });
   if (st.maximized) win.maximize();
   win.once('ready-to-show', () => win?.show());
-  win.on('close', saveWindowState);
+  win.on('close', (e) => {
+    saveWindowState();
+    // "Keep in the notification area": hide instead of closing the GUI.
+    if (!quitting && desktop.keepInTray) {
+      e.preventDefault();
+      win?.hide();
+    }
+  });
   win.on('focus', () => win?.flashFrame(false));
   win.on('closed', () => (win = null));
 
@@ -108,18 +141,28 @@ function createWindow(): void {
 
 // ---------- IPC ----------
 
-const ALLOWED_PREFIXES = ['app.', 'profiles.', 'sessions.', 'settings.', 'uiPrefs.', 'shells.', 'system.elevation', 'themes.', 'ping'];
+const handle = (channel: string, fn: (e: IpcMainInvokeEvent, ...args: any[]) => unknown) => ipcMain.handle(channel, fn);
+
+const ALLOWED_PREFIXES = [
+  'app.', 'profiles.', 'sessions.', 'settings.', 'uiPrefs.', 'shells.', 'themes.', 'snippets.', 'workspaces.', 'ssh.',
+  'system.elevation', 'system.suggestions', 'system.installSuggestions', 'ping',
+];
 const THEME_IMAGE_RE = /^[a-z0-9-]{8,64}\.(png|jpe?g|webp|gif)$/i;
 const IMAGE_MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
 
 function registerIpc(): void {
-  const send = (channel: string, ...args: unknown[]) => {
-    if (win && !win.isDestroyed()) win.webContents.send(channel, ...args);
-  };
-  bridge.on('event', (ev: string, data: unknown) => send('omni:event', ev, data));
-  bridge.on('status', (s: unknown) => send('omni:daemon-status', s));
+  bridge.on('event', (ev: string, data: unknown) => {
+    send('omni:event', ev, data);
+    if (ev === 'state.changed' && /\bsettings\b/.test(String((data as { reason?: string })?.reason ?? ''))) void refreshDesktopSettings();
+  });
+  bridge.on('status', (s: { connected?: boolean }) => {
+    send('omni:daemon-status', s);
+    if (s?.connected) void refreshDesktopSettings();
+  });
+  handle('omni:update-status', () => desktop.status);
+  handle('omni:update-check', () => desktop.checkForUpdates());
+  handle('omni:update-install', () => desktop.install());
 
-  const handle = (channel: string, fn: (e: IpcMainInvokeEvent, ...args: any[]) => unknown) => ipcMain.handle(channel, fn);
 
   handle('omni:invoke', async (_e, method: string, params: unknown) => {
     if (typeof method !== 'string' || !ALLOWED_PREFIXES.some((p) => method.startsWith(p))) {
@@ -258,12 +301,7 @@ function registerIpc(): void {
     // Flash the taskbar button until the user focuses the window.
     if (win && !win.isFocused()) win.flashFrame(true);
   });
-  handle('omni:focus-window', () => {
-    if (!win) return;
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
-  });
+  handle('omni:focus-window', () => desktop.show());
   handle('omni:quit-gui', () => {
     app.quit();
   });
@@ -305,6 +343,8 @@ async function onReady(): Promise<void> {
 app.on('window-all-closed', () => {
   app.quit();
 });
+
+app.on('will-quit', () => desktop.dispose());
 
 // Closing the GUI never kills terminals: we just say goodbye to the session manager.
 app.on('before-quit', (e) => {

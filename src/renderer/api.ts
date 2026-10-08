@@ -15,6 +15,13 @@ export interface ElevationStatus {
   sudoPath: string;
 }
 
+export interface UpdateStatus {
+  state: 'idle' | 'disabled' | 'portable' | 'dev' | 'checking' | 'none' | 'downloading' | 'ready' | 'error';
+  version?: string;
+  progress?: number;
+  message?: string;
+}
+
 export interface DaemonStatus {
   connected: boolean;
   pid: number | null;
@@ -46,6 +53,12 @@ interface OmniBridge {
   enableSudo(): Promise<{ ok: boolean; status: ElevationStatus }>;
   openElevatedWindow(cwd: string): Promise<boolean>;
   focusWindow(): Promise<void>;
+  updateStatus(): Promise<UpdateStatus>;
+  checkForUpdates(): Promise<UpdateStatus>;
+  installUpdate(): Promise<void>;
+  onUpdateStatus(handler: (s: UpdateStatus) => void): () => void;
+  onCommand(handler: (name: string) => void): () => void;
+  onNotice(handler: (text: string) => void): () => void;
 }
 
 declare global {

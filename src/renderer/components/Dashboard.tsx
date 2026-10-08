@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { Profile, SessionInfo, ShellInfo } from '../../shared/types';
+import type { Profile, SessionInfo, ShellInfo, Workspace } from '../../shared/types';
 import { cx, fmtBytes, fmtDate, fmtDateFull, shellLabel, statsSummary, uiStatus, type ResourceStats, type UiStatus } from '../util';
 import { StatusPill } from './Chrome';
 import { Icon } from './Icon';
@@ -16,15 +16,18 @@ const QUICK = [
   { title: 'Dev server', desc: 'npm run dev', name: 'Dev server', shellId: 'powershell', cmd: 'npm run dev', icon: 'rocket', color: '#22c55e' },
 ];
 
+/** Shortcuts shown on the dashboard (action id, label); keys come from the user's bindings. */
 const SHORTCUTS: [string, string][] = [
-  ['Ctrl+Shift+P', 'Command palette'],
-  ['Ctrl+Shift+T', 'New terminal'],
-  ['Ctrl+Shift+F', 'Find in terminal'],
-  ['Ctrl+Tab', 'Next tab'],
-  ['Ctrl+Alt+1-9', 'Go to tab'],
-  ['Ctrl+Shift+W', 'Close tab (keeps running)'],
-  ['Ctrl+= Ctrl+-', 'Zoom'],
-  ['Ctrl+Shift+A', 'All terminals'],
+  ['app.palette', 'Command palette'],
+  ['terminal.new', 'New terminal'],
+  ['pane.splitRight', 'Split right'],
+  ['pane.splitDown', 'Split down'],
+  ['app.snippets', 'Run a snippet'],
+  ['terminal.find', 'Find in terminal'],
+  ['tab.next', 'Next tab'],
+  ['tab.close', 'Close tab or pane (keeps running)'],
+  ['terminal.accounts', 'Accounts in this terminal'],
+  ['app.dashboard', 'All terminals'],
 ];
 
 function summarySentence(total: number, running: number, stats: Record<string, ResourceStats>, admin: string): string {
@@ -53,7 +56,19 @@ export function Dashboard({
   titles,
   onQuickNew,
   adminLabel,
+  workspaces,
+  canSaveWorkspace,
+  onOpenWorkspace,
+  onSaveWorkspace,
+  onDeleteWorkspace,
+  bindings,
 }: {
+  workspaces: Workspace[];
+  canSaveWorkspace: boolean;
+  onOpenWorkspace: (w: Workspace) => void;
+  onSaveWorkspace: () => void;
+  onDeleteWorkspace: (w: Workspace) => void;
+  bindings: Map<string, string>;
   onQuickNew: (preset: { name: string; shellId: string; startupCommand: string }) => void;
   adminLabel: string;
   profiles: Profile[];
@@ -203,6 +218,34 @@ export function Dashboard({
         </>
       )}
 
+      {profiles.length > 0 && (
+        <section className="dash-section">
+          <h3>
+            {t('Workspaces')} <span className="count">{workspaces.length}</span>
+            <span className="section-hint">{t('Open a set of terminals, split the way you saved them.')}</span>
+          </h3>
+          <div className="workspace-list">
+            {workspaces.map((w) => {
+              const names = w.tabs.flatMap((tab) => tab.panes.map((pn) => profiles.find((p) => p.id === pn.profileId)?.name ?? '?'));
+              return (
+                <div key={w.id} className="workspace-row">
+                  <Icon name="grid" size={15} />
+                  <span className="workspace-text">
+                    <b>{w.name}</b>
+                    <em>{w.tabs.length === 1 ? t('1 tab') : t('{n} tabs', { n: w.tabs.length })}: {names.join(', ')}</em>
+                  </span>
+                  <button className="btn btn-sm btn-primary" onClick={() => onOpenWorkspace(w)}><Icon name="play" size={13} /> {t('Open')}</button>
+                  <button className="icon-btn" title={t('Delete workspace')} onClick={() => onDeleteWorkspace(w)}><Icon name="trash" size={14} /></button>
+                </div>
+              );
+            })}
+            <button className="btn btn-ghost workspace-save" disabled={!canSaveWorkspace} onClick={onSaveWorkspace} title={canSaveWorkspace ? '' : t('Open some terminals first')}>
+              <Icon name="plus" size={14} /> {t('Save open tabs as a workspace…')}
+            </button>
+          </div>
+        </section>
+      )}
+
       <section className="dash-section">
         <h3>{t('New terminal from a template')}</h3>
         <div className="quick-grid">
@@ -221,12 +264,16 @@ export function Dashboard({
       <section className="dash-section">
         <h3>{t('Keyboard shortcuts')}</h3>
         <div className="shortcut-grid">
-          {SHORTCUTS.map(([keys, what]) => (
-            <div key={keys} className="shortcut">
+          {SHORTCUTS.filter(([id]) => bindings.get(id)).map(([id, what]) => (
+            <div key={id} className="shortcut">
               <span>{t(what)}</span>
-              <span className="keys">{keys.split(' ').map((k) => <kbd key={k}>{k}</kbd>)}</span>
+              <span className="keys"><kbd>{bindings.get(id)}</kbd></span>
             </div>
           ))}
+          <div className="shortcut">
+            <span>{t('Go to tab')}</span>
+            <span className="keys"><kbd>Ctrl+Alt+1-9</kbd></span>
+          </div>
         </div>
       </section>
     </div>
