@@ -33,6 +33,8 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  // Declared before the service: restoring terminals during init() already reports changes.
+  let idleTimer: NodeJS.Timeout | null = null;
   const service = new OmniService({
     paths,
     log,
@@ -88,7 +90,6 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
   // Idle exit: no GUI, no running terminals, and the user did not ask to keep it resident.
-  let idleTimer: NodeJS.Timeout | null = null;
   function scheduleIdleCheck(): void {
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {

@@ -214,5 +214,8 @@ describe('session manager process (named pipe)', () => {
     const att = await c2.call<{ snapshot: string }>('sessions.attach', { profileId: p.id, autoStart: false });
     expect(att.snapshot).toContain('BEFORE_RESTART_MARKER');
     expect(att.snapshot).toContain('Restored after restart');
+    // Restoring must not fail part-way (1.3.1 logged "Cannot access 'idleTimer' before initialization").
+    const managerLog = fs.readdirSync(paths.logs).map((f) => fs.readFileSync(path.join(paths.logs, f), 'utf8')).join('\n');
+    expect(managerLog).not.toContain('Could not restore terminal');
   });
 });
