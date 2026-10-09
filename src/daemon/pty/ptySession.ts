@@ -65,6 +65,10 @@ export class PtySession {
   dirty = false;
   /** Folder the shell is in (from OSC 9;9; the start folder until the first prompt reports it). */
   cwd: string;
+  /** The environment the shell was started with (to see what the user changed with `set`). */
+  readonly launchEnv: Record<string, string>;
+  /** Last saved (encrypted) variable changes, kept if a later read fails. */
+  envBlob: string | null = null;
 
   constructor(opts: PtySessionOptions) {
     this.sessionId = opts.sessionId;
@@ -85,6 +89,7 @@ export class PtySession {
     this.mirror.onTitleChange((t) => (this.title = t));
     // Current folder reported by the shell's prompt (OSC 9;9), used to reopen there after a restart.
     this.cwd = opts.cwd;
+    this.launchEnv = { ...opts.env };
     this.mirror.parser.registerOscHandler(9, (data) => {
       if (!data.startsWith('9;')) return false;
       const dir = data.slice(2).trim().replace(/^"(.*)"$/, '$1');
@@ -218,6 +223,19 @@ export class PtySession {
     const tmp = `${file}.tmp`;
     fs.writeFileSync(tmp, text);
     fs.renameSync(tmp, file);
+  }
+
+  /** The logical line at the cursor (wrapped rows joined), as shown on screen. */
+  cursorLine(): string {
+    const buf = this.mirror.buffer.active;
+    if (buf.type !== 'normal') return '';
+    let y = buf.baseY + buf.cursorY;
+    let text = buf.getLine(y)?.translateToString(true) ?? '';
+    while (y > 0 && buf.getLine(y)?.isWrapped) {
+      y--;
+      text = (buf.getLine(y)?.translateToString(false) ?? '') + text;
+    }
+    return text;
   }
 
   async textContent(): Promise<string> {

@@ -11,6 +11,8 @@ export interface SnapshotMeta {
   /** It ran with administrator rights. */
   elevated: boolean;
   savedAt: number;
+  /** Variables the user set in the shell, DPAPI-encrypted for this terminal; null if none. */
+  envBlob?: string | null;
 }
 
 export const RESUME_CLAUDE = 'claude --continue';
@@ -52,6 +54,7 @@ export function parseSnapshotMeta(text: string): SnapshotMeta | null {
       programs: Array.isArray(m.programs) ? m.programs.map(String) : null,
       elevated: m.elevated === true,
       savedAt: Number(m.savedAt) || 0,
+      envBlob: typeof m.envBlob === 'string' ? m.envBlob : null,
     };
   } catch {
     return null;

@@ -101,7 +101,8 @@ export function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [, setHostTick] = useState(0);
   const [findOpen, setFindOpen] = useState(false);
-  const [palette, setPalette] = useState<'all' | 'snippets' | null>(null);
+  const [palette, setPalette] = useState<'all' | 'snippets' | 'history' | null>(null);
+  const [history, setHistory] = useState<string[] | null>(null);
   const [elevation, setElevation] = useState<ElevationStatus | null>(null);
   const [adminHint, setAdminHint] = useState<string | null>(null);
   const [stats, setStats] = useState<Record<string, ResourceStats>>({});
@@ -606,6 +607,19 @@ export function App() {
     toast(t('Copied {url}', { url: url.length > 60 ? `${url.slice(0, 57)}…` : url }));
   };
 
+  /** Earlier commands of the current terminal (kept across restarts, also for Command Prompt). */
+  const openHistory = async () => {
+    const key = currentRef.current;
+    if (key === 'dashboard') return;
+    setHistory(null);
+    setPalette('history');
+    try {
+      setHistory(await bridge.invoke<string[]>('sessions.history', { profileId: key }));
+    } catch {
+      setHistory([]);
+    }
+  };
+
   // ----- snippets -----
   const runSnippet = (command: string, enter: boolean) => {
     const key = currentRef.current;
@@ -735,6 +749,7 @@ export function App() {
     'pane.focusPrev': () => cyclePane(-1),
     'pane.broadcast': onTerminal(() => toggleBroadcast()),
     'app.snippets': () => setPalette('snippets'),
+    'terminal.history': onTerminal(() => void openHistory()),
     'terminal.accounts': onTerminal((k) => setDialog({ kind: 'accounts', id: baseProfileId(k) })),
     'app.settings': () => setDialog({ kind: 'app-settings' }),
     'zoom.in': () => zoom(1),
@@ -963,6 +978,7 @@ export function App() {
         ...(activeSession?.state === 'running' ? [{ label: t('Reconnect'), icon: 'link', onClick: () => void reconnect(currentKey) }] : []),
         { label: t('Copy last link'), icon: 'link', onClick: () => copyLastLink() },
         { label: t('Run a snippet…'), icon: 'snippet', onClick: () => setPalette('snippets') },
+        { label: t('Earlier commands…'), icon: 'restart', onClick: () => void openHistory() },
         { label: t('Open another'), icon: 'plus', onClick: () => void openAnother(currentKey) },
         { label: t('Find in output'), icon: 'search', onClick: () => setFindOpen(true) },
         { label: t('Open profile folder'), icon: 'folder', onClick: () => void bridge.openPath(activeProfile.dir) },
@@ -1143,6 +1159,27 @@ export function App() {
         <CommandPalette
           items={[...snippetItems, { id: 'a:snippets', label: t('Manage snippets…'), icon: 'snippet', group: 'Snippets', run: () => setDialog({ kind: 'app-settings', tab: 'snippets' }) }]}
           placeholder={t('Run a snippet in the current terminal…')}
+          onClose={() => setPalette(null)}
+        />
+      )}
+      {palette === 'history' && (
+        <CommandPalette
+          items={(history ?? []).map((c, i) => ({
+            id: `h:${i}`,
+            label: c,
+            icon: 'terminal',
+            group: 'History' as const,
+            // Typed, not run: check or edit it, then press Enter.
+            run: () => {
+              const h = hosts.get(currentRef.current);
+              if (h?.state === 'attached') {
+                h.sendInput(c.replace(/\r?\n/g, ' '));
+                h.focus();
+              }
+            },
+          }))}
+          placeholder={t('Earlier commands of this terminal (typed, not run)…')}
+          empty={history === null ? t('Reading…') : t('No earlier commands yet. Commands you run in this terminal show up here, also after a restart.')}
           onClose={() => setPalette(null)}
         />
       )}

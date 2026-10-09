@@ -47,6 +47,9 @@ vim.
 OmniTerminal opens, the way you left them:
 - with their earlier output (up to 10,000 lines, saved every 15 seconds),
 - in the folder they were in (Command Prompt and PowerShell report it as you work),
+- with the variables you set in them (`set X=...`, `$env:X = ...`), stored encrypted,
+- with their command history: `Ctrl+Shift+H` lists a terminal's earlier commands, including Command Prompt's, which
+  Windows itself keeps only in memory,
 - Claude Code conversations resumed with `claude --continue`,
 - terminals that ran as administrator ask Windows for administrator rights again.
 
@@ -169,6 +172,7 @@ Keyboard shortcuts:
 | `Alt+Left`, `Alt+Right` | Previous, next pane |
 | `Ctrl+Shift+B` | Type into all panes of the tab |
 | `Ctrl+Shift+S` | Run a snippet |
+| `Ctrl+Shift+H` | Earlier commands of this terminal (also after a restart) |
 | `Ctrl+Shift+I` | Accounts in this terminal |
 | `Ctrl+Shift+W` | Close the pane or tab (the terminal keeps running) |
 | `Ctrl+Tab`, `Ctrl+Alt+1` to `9` | Switch tabs |
@@ -278,7 +282,7 @@ git clone https://github.com/shklala/omniterminal.git
 cd omniterminal
 npm install
 npm run dev        # development build with its own data folder
-npm test           # 115 unit and integration tests
+npm test           # 119 unit and integration tests
 npm run test:e2e   # 12 tests that drive the real app window
 npm run dist       # installer and portable zip in .\release
 ```

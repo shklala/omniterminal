@@ -411,6 +411,8 @@ export class OmniService {
         this.sessions.write(id, (shell!.kind === 'gitbash' ? '\x15' : '\x1b') + cmd + '\r');
         return true;
       }
+      case 'sessions.history':
+        return this.sessions.commandHistory(str(p, 'profileId'));
       case 'sessions.saveNow':
         await this.sessions.saveSnapshots(true);
         return true;

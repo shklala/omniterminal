@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { redact, REDACTED } from '../src/shared/redact';
@@ -17,6 +19,8 @@ import { claudeWasRunning, planElevatedRestore, restoreCommandFor, type Snapshot
 import { Terminal as HeadlessTerminal } from '@xterm/headless';
 import { createLinkProvider, lastLink } from '../src/renderer/terminal/links';
 import { parseVersion } from '../src/daemon/windows/toolCheck';
+import { appendHistory, cmdCommandsFromInput, readHistory } from '../src/daemon/sessions/history';
+import { diffEnvironment } from '../src/daemon/windows/processEnv';
 
 describe('profile name validation', () => {
   it('accepts and normalizes normal names', () => {
@@ -296,5 +300,33 @@ describe('Restoring after a restart: what to run', () => {
     const ps = powershellBootstrap('C:\\h.txt', '', 'T');
     expect(ps).toContain(']9;9;');
     expect(ps).toContain("Write-Error 'x' -ErrorAction Ignore"); // keeps $? for the user's prompt
+  });
+});
+
+describe('Command history and session variables across a restart', () => {
+  it('records the command run at a cmd prompt, typed or pasted', () => {
+    expect(cmdCommandsFromInput('C:\\work>dir /s', '\r')).toEqual(['dir /s']); // typed, then Enter
+    expect(cmdCommandsFromInput('C:\\work>', 'npm test\r')).toEqual(['npm test']); // pasted with Enter
+    expect(cmdCommandsFromInput('C:\\work>', 'a\rb\rc')).toEqual(['a', 'b']); // "c" not run yet
+    expect(cmdCommandsFromInput('C:\\work>', '\x1b[A\r')).toEqual([]); // up-arrow recall: shown on screen next time
+    expect(cmdCommandsFromInput('> claude prompt', 'hello\r')).toEqual([]); // not at a cmd prompt
+    expect(cmdCommandsFromInput('\\\\server\\share>', 'dir\r')).toEqual(['dir']);
+  });
+
+  it('keeps history newest first without repeats', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omni-hist-'));
+    const file = path.join(dir, 'cmd_history.txt');
+    for (const c of ['a', 'b', 'b', 'c', 'a']) appendHistory(file, c);
+    expect(fs.readFileSync(file, 'utf8')).toBe('a\nb\nc\na\n'); // immediate repeat skipped
+    expect(readHistory(file, 10)).toEqual(['a', 'c', 'b']);
+    fs.writeFileSync(path.join(dir, 'ps.txt'), 'Get-Item x\nfunction f {`\n  1`\n}\n');
+    expect(readHistory(path.join(dir, 'ps.txt'), 10)).toEqual(['function f {\n  1\n}', 'Get-Item x']);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('finds what the user set or removed in the shell', () => {
+    const d = diffEnvironment({ Path: 'C:\\a', HOME: 'x', OLD: '1', OMNITERMINAL_SESSION_ID: 's1' }, { PATH: 'C:\\a;C:\\b', HOME: 'x', NEW: 'v', '=C:': 'C:\\w', OMNITERMINAL_SESSION_ID: 's2' });
+    expect(d.set).toEqual({ PATH: 'C:\\a;C:\\b', NEW: 'v' });
+    expect(d.unset).toEqual(['OLD']);
   });
 });

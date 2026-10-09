@@ -73,6 +73,15 @@ export class SecretStore {
     return out;
   }
 
+  /** DPAPI-encrypts text for this terminal only (used for variables saved across a restart). */
+  async seal(profileId: string, text: string): Promise<string> {
+    return (await this.crypto.protect([text], `${this.entropy(profileId)}/session`))[0];
+  }
+
+  async unseal(profileId: string, blob: string): Promise<string> {
+    return (await this.crypto.unprotect([blob], `${this.entropy(profileId)}/session`))[0];
+  }
+
   clear(profileDir: string): void {
     try {
       fs.rmSync(this.file(profileDir), { force: true });

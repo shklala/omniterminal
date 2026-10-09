@@ -23,6 +23,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   { id: 'pane.focusPrev', label: 'Previous pane', defaultKeys: 'Alt+Left' },
   { id: 'pane.broadcast', label: 'Type into all panes of this tab', defaultKeys: 'Ctrl+Shift+B' },
   { id: 'app.snippets', label: 'Run a snippet', defaultKeys: 'Ctrl+Shift+S' },
+  { id: 'terminal.history', label: 'Earlier commands of this terminal', defaultKeys: 'Ctrl+Shift+H' },
   { id: 'terminal.accounts', label: 'Accounts in this terminal', defaultKeys: 'Ctrl+Shift+I' },
   { id: 'app.settings', label: 'OmniTerminal settings', defaultKeys: 'Ctrl+,' },
   { id: 'zoom.in', label: 'Zoom in', defaultKeys: 'Ctrl+=' },

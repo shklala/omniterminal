@@ -257,6 +257,43 @@ describe('Restore and update hand-off', () => {
     await waitFor(() => ctx!.service.sessions.get(p.id)?.alive === true && ctx!.service.sessions.get(p.id)?.elevated === false, 10000);
   }, 40000);
 
+  it('Command Prompt continues after a restart as if it was never closed: folder, output, set variables, command history', async () => {
+    ctx = await makeService();
+    const p = await ctx.service.profiles.create({ name: 'FullCmd', shellId: 'cmd' });
+    await ctx.service.sessions.start(p.id);
+    const text = () => ctx!.service.sessions.textContent(p.id).catch(() => '');
+    const run = async (cmd: string, expect: RegExp) => {
+      ctx!.service.sessions.write(p.id, cmd + '\r');
+      await waitFor(async () => expect.test(await text()), 15000);
+    };
+    await waitFor(async () => /[A-Z]:\\.*>/.test(await text()), 20000);
+    await run('set OMNI_TASK=step 3 of 5', /C:\\.*>\s*$/m);
+    await run('cd /d C:\\Windows', /C:\\Windows>/);
+    await run('echo TASK_OUTPUT_%OMNI_TASK%', /TASK_OUTPUT_step 3 of 5/);
+
+    // Each command was recorded (cmd itself keeps history only in memory).
+    expect(ctx.service.sessions.commandHistory(p.id).slice(0, 3)).toEqual(['echo TASK_OUTPUT_%OMNI_TASK%', 'cd /d C:\\Windows', 'set OMNI_TASK=step 3 of 5']);
+
+    await ctx.service.sessions.saveSnapshots(true);
+    const meta = ctx.service.sessions.readSnapshotMeta(p.dir, p.id);
+    expect(meta?.envBlob).toBeTruthy();
+    expect(fs.readFileSync(path.join(p.dir, 'cache', 'last-screen.json'), 'utf8')).not.toContain('step 3 of 5'); // stored encrypted
+
+    // The PC restarts.
+    const saved = ['last-screen.ans', 'last-screen.json'].map((f) => [f, fs.readFileSync(path.join(p.dir, 'cache', f), 'utf8')] as const);
+    await ctx.service.sessions.stop(p.id);
+    for (const [f, t] of saved) fs.writeFileSync(path.join(p.dir, 'cache', f), t);
+    ctx.service.db.run(
+      "INSERT INTO sessions (id, profile_id, pid, pid_start, daemon_pid, started_at, status) VALUES (?, ?, NULL, NULL, 1, ?, 'running')",
+      [crypto.randomUUID(), p.id, Date.now()],
+    );
+    await ctx.service.sessions.recoverOrphans({ restore: true });
+    await waitFor(async () => /C:\\Windows>\s*$/m.test(await text()), 20000);
+    expect(await text()).toContain('TASK_OUTPUT_step 3 of 5'); // the earlier output
+    await run('echo AFTER_RESTART_%OMNI_TASK%', /AFTER_RESTART_step 3 of 5/); // the variable
+    expect(ctx.service.sessions.commandHistory(p.id)).toContain('set OMNI_TASK=step 3 of 5'); // the history
+  }, 90000);
+
   it('hands running terminals to the next session manager with their screens', async () => {
     const home = tempHome();
     const first = await makeService(home);

@@ -24,6 +24,8 @@ import { elevatedShellCommand, getElevationStatus, wrapWithSudo, type ElevationS
 import { isPsReadLineInstalled } from '../windows/psreadline';
 import { sanitizeSnapshot } from '../pty/snapshot';
 import { parseSnapshotMeta, planElevatedRestore, restoreCommandFor, type SnapshotMeta } from './restore';
+import { diffEnvironment, readProcessEnvironments } from '../windows/processEnv';
+import { appendHistory, cmdCommandsFromInput, readHistory } from './history';
 import { baseProfileId, instanceNumber, isValidSessionKey, makeSessionKey } from '../../shared/sessionKey';
 
 export interface SessionEvents {
@@ -59,6 +61,8 @@ export class SessionManager {
   resumeClaudeEnabled: () => boolean = () => true;
   /** Terminals being stopped on purpose (so a quick exit is not mistaken for a refused elevation). */
   private readonly stopRequested = new Set<string>();
+  /** Session variables are read every 4th snapshot round (each read starts a PowerShell). */
+  private envRound = 0;
   private shells: ShellInfo[] = [];
   private readonly elevation: () => Promise<ElevationStatus>;
 
@@ -176,6 +180,23 @@ export class SessionManager {
     if (due.length === 0) return;
     // Which programs are running in each terminal (to resume Claude Code after a restart).
     const trees = await getTreeStats(due.map((s) => s.pid)).catch(() => ({}) as Record<number, TreeStats>);
+    // What the user set with `set X=...` / `$env:X = ...` (cmd and PowerShell; not elevated shells,
+    // whose memory a normal process cannot read). Every minute, and before an update or hibernate.
+    const envKinds = ['cmd', 'powershell', 'pwsh'];
+    const readEnv = force || this.envRound++ % 4 === 0;
+    const envTargets = readEnv ? due.filter((s) => !s.elevated && envKinds.includes(this.shellKindOf(s.profileId))) : [];
+    const envs = await readProcessEnvironments(envTargets.map((s) => s.pid)).catch(() => ({}) as Record<number, Record<string, string>>);
+    for (const s of envTargets) {
+      const now = envs[s.pid];
+      if (!now) continue;
+      const diff = diffEnvironment(s.launchEnv, now);
+      const empty = Object.keys(diff.set).length === 0 && diff.unset.length === 0;
+      try {
+        s.envBlob = empty ? null : await this.secrets.seal(baseProfileId(s.profileId), JSON.stringify(diff));
+      } catch (e) {
+        this.log.warn(`Could not save variables of ${s.profileId}`, e);
+      }
+    }
     for (const s of due) {
       const profile = this.profiles.find(baseProfileId(s.profileId));
       if (!profile) continue;
@@ -187,6 +208,7 @@ export class SessionManager {
           programs: trees[s.pid]?.programs ?? null,
           elevated: s.elevated,
           savedAt: Date.now(),
+          envBlob: s.envBlob,
         };
         const file = this.metaFile(profile.dir, s.profileId);
         fs.writeFileSync(`${file}.tmp`, JSON.stringify(meta));
@@ -304,6 +326,14 @@ export class SessionManager {
     if (shell?.kind === 'powershell' && modulesDir && this.suggestionsEnabled() && isPsReadLineInstalled(modulesDir)) {
       extraEnv.PSModulePath = [modulesDir, process.env.PSModulePath].filter(Boolean).join(';');
     }
+    let sessionEnv: { set: Record<string, string>; unset: string[] } | null = null;
+    if (meta?.envBlob) {
+      try {
+        sessionEnv = JSON.parse(await this.secrets.unseal(profile.id, meta.envBlob));
+      } catch (e) {
+        this.log.warn(`Could not restore the variables of ${profileId}`, e);
+      }
+    }
     const built = buildEnvironment({
       profile,
       sessionId,
@@ -312,6 +342,7 @@ export class SessionManager {
       registry,
       extraEnv,
       isWsl: shell?.kind === 'wsl',
+      sessionEnv,
     });
 
     const transcriptFile = profile.advanced.transcript
@@ -383,7 +414,8 @@ export class SessionManager {
     const adminNote =
       (wasElevated
         ? '\x1b[33m[This terminal ran as administrator before the restart. It reopened WITHOUT administrator rights; use Run as Administrator to elevate it again.]\x1b[0m\r\n'
-        : '') + (resumeWith ? `\x1b[2m[Resuming with: ${resumeWith}]\x1b[0m\r\n` : '');
+        : '') + (resumeWith ? `\x1b[2m[Resuming with: ${resumeWith}]\x1b[0m\r\n` : '') +
+      '\x1b[2m[Commands from before the restart: Ctrl+Shift+H]\x1b[0m\r\n';
     try {
       if (!fs.existsSync(file) || fs.statSync(file).size > 8 * 1024 * 1024) return adminNote || undefined;
       // Older versions saved terminal modes too (mouse tracking, alternate screen); drop them.
@@ -467,7 +499,30 @@ export class SessionManager {
   }
 
   write(profileId: string, data: string): void {
-    this.sessions.get(profileId)?.write(data);
+    const s = this.sessions.get(profileId);
+    if (!s) return;
+    if (data.includes('\r') && this.shellKindOf(profileId) === 'cmd') {
+      const profile = this.profiles.find(baseProfileId(profileId));
+      if (profile) {
+        for (const command of cmdCommandsFromInput(s.cursorLine(), data)) {
+          appendHistory(path.join(profile.dir, 'history', 'cmd_history.txt'), command);
+        }
+      }
+    }
+    s.write(data);
+  }
+
+  /** Earlier commands of a terminal, newest first (cmd: recorded by OmniTerminal; others: their history file). */
+  commandHistory(profileId: string): string[] {
+    const profile = this.profiles.get(baseProfileId(profileId));
+    const kind = this.shellKindOf(profileId);
+    const file = kind === 'cmd' ? 'cmd_history.txt' : kind === 'powershell' || kind === 'pwsh' ? 'powershell_history.txt' : 'bash_history';
+    return readHistory(path.join(profile.dir, 'history', file), 500);
+  }
+
+  private shellKindOf(profileId: string): string {
+    const profile = this.profiles.find(baseProfileId(profileId));
+    return this.shells.find((x) => x.id === profile?.shellId)?.kind ?? '';
   }
 
   resize(profileId: string, cols: number, rows: number): void {

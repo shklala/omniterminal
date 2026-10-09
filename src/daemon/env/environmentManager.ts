@@ -57,6 +57,8 @@ export interface BuildEnvInput {
   registry: RegistryEnvironment | null;
   extraEnv?: Record<string, string>;
   isWsl?: boolean;
+  /** Variables the user set or removed in the shell before a restart (applied last). */
+  sessionEnv?: { set: Record<string, string>; unset: string[] } | null;
 }
 
 export interface BuiltEnv {
@@ -191,6 +193,11 @@ export function buildEnvironment(input: BuildEnvInput): BuiltEnv {
     } else {
       env.set(name, expandVars(v.value, env));
     }
+  }
+
+  if (input.sessionEnv) {
+    for (const name of input.sessionEnv.unset) env.delete(name);
+    for (const [k, v] of Object.entries(input.sessionEnv.set)) env.set(k, v);
   }
 
   if (input.isWsl) {

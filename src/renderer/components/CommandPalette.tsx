@@ -9,7 +9,7 @@ export interface PaletteItem {
   hint?: string;
   icon: string;
   color?: string;
-  group: 'Terminals' | 'Actions' | 'Snippets' | 'Workspaces';
+  group: 'Terminals' | 'Actions' | 'Snippets' | 'Workspaces' | 'History';
   run: () => void;
 }
 
@@ -34,7 +34,7 @@ export function fuzzyScore(query: string, text: string): number | null {
 }
 
 /** Ctrl+Shift+P / Ctrl+K: jump to any terminal or run any action by typing. */
-const GROUP_LABEL: Record<PaletteItem['group'], string> = { Terminals: 'Terminal', Actions: 'Action', Snippets: 'Snippet', Workspaces: 'Workspace' };
+const GROUP_LABEL: Record<PaletteItem['group'], string> = { Terminals: 'Terminal', Actions: 'Action', Snippets: 'Snippet', Workspaces: 'Workspace', History: 'Command' };
 
 export function CommandPalette({ items, onClose, placeholder, empty }: { items: PaletteItem[]; onClose: () => void; placeholder?: string; empty?: string }) {
   const [query, setQuery] = useState('');
