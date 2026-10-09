@@ -14,6 +14,7 @@ import { cleanupOrphans, getProcessStartTime, getTreeStats, killTree, type TreeS
 import { readRegistryEnvironment } from '../windows/registryEnv';
 import { elevatedShellCommand, getElevationStatus, wrapWithSudo } from '../windows/elevation';
 import { isPsReadLineInstalled } from '../windows/psreadline';
+import { sanitizeSnapshot } from '../pty/snapshot';
 import { baseProfileId, instanceNumber, isValidSessionKey, makeSessionKey } from '../../shared/sessionKey';
 
 export interface SessionEvents {
@@ -305,7 +306,8 @@ export class SessionManager {
       : '';
     try {
       if (!fs.existsSync(file) || fs.statSync(file).size > 8 * 1024 * 1024) return adminNote || undefined;
-      const saved = fs.readFileSync(file, 'utf8');
+      // Older versions saved terminal modes too (mouse tracking, alternate screen); drop them.
+      const saved = sanitizeSnapshot(fs.readFileSync(file, 'utf8'));
       return `${saved}\x1b[0m\r\n\x1b[2m[Restored after restart. Output above is from the previous session.]\x1b[0m\r\n${adminNote}`;
     } catch {
       return adminNote || undefined;

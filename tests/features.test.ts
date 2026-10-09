@@ -168,6 +168,35 @@ describe('Restore and update hand-off', () => {
     await waitFor(async () => (await ctx!.service.sessions.textContent(p.id)).includes('WITHOUT administrator rights'), 15000);
   }, 30000);
 
+  it("restores a full-screen program's screen as plain history, without its mouse mode or alternate screen", async () => {
+    ctx = await makeService();
+    const p = await ctx.service.profiles.create({ name: 'Tui', shellId: 'cmd' });
+    const ESC = '\x1b';
+    // A screen saved by 1.3.0 while Claude Code was open: mouse tracking, bracketed paste, alternate screen.
+    const old = `C:\\> claude\r\n${ESC}[?1049h${ESC}[H${ESC}[1mCHAT_LINE_ONE${ESC}[0m\r\n> my question\r\n  CHAT_ANSWER${ESC}[?2004h${ESC}[?1000h${ESC}[?1006h`;
+    fs.mkdirSync(path.join(p.dir, 'cache'), { recursive: true });
+    fs.writeFileSync(path.join(p.dir, 'cache', 'last-screen.ans'), old);
+    ctx.service.db.run(
+      "INSERT INTO sessions (id, profile_id, pid, pid_start, daemon_pid, started_at, status) VALUES (?, ?, NULL, NULL, 1, ?, 'running')",
+      [crypto.randomUUID(), p.id, Date.now()],
+    );
+    await ctx.service.sessions.recoverOrphans({ restore: true });
+    await waitFor(async () => (await ctx!.service.sessions.textContent(p.id)).includes('CHAT_ANSWER'), 15000);
+    const { snapshot } = await ctx.service.sessions.attach(p.id, 'gui', undefined, false);
+    expect(snapshot).toContain('CHAT_LINE_ONE');
+    expect(snapshot).not.toMatch(/\x1b\[\?(1000|1002|1003|1006|1049|2004)h/);
+    // The chat stays in scrollback, above the new shell's banner.
+    await waitFor(async () => (await ctx!.service.sessions.textContent(p.id)).includes('Microsoft Windows'), 15000);
+    const t = await ctx.service.sessions.textContent(p.id);
+    expect(t.indexOf('CHAT_ANSWER')).toBeLessThan(t.lastIndexOf('Microsoft Windows'));
+
+    // New snapshots are saved without modes in the first place.
+    await ctx.service.sessions.saveSnapshots(true);
+    const saved = fs.readFileSync(path.join(p.dir, 'cache', 'last-screen.ans'), 'utf8');
+    expect(saved).toContain('CHAT_ANSWER');
+    expect(saved).not.toMatch(/\x1b\[\?[0-9;]*[hl]/);
+  }, 30000);
+
   it('hands running terminals to the next session manager with their screens', async () => {
     const home = tempHome();
     const first = await makeService(home);

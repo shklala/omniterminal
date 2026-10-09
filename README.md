@@ -269,7 +269,7 @@ git clone https://github.com/shklala/omniterminal.git
 cd omniterminal
 npm install
 npm run dev        # development build with its own data folder
-npm test           # 107 unit and integration tests
+npm test           # 108 unit and integration tests
 npm run test:e2e   # 12 tests that drive the real app window
 npm run dist       # installer and portable zip in .\release
 ```

@@ -6,6 +6,7 @@ import * as pty from 'node-pty';
 import { Terminal as HeadlessTerminal } from '@xterm/headless';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { redact } from '../../shared/redact';
+import { sanitizeSnapshot } from './snapshot';
 
 export interface PtySessionOptions {
   sessionId: string;
@@ -201,7 +202,8 @@ export class PtySession {
   async saveSnapshot(file: string, maxLines = 1000): Promise<void> {
     this.dirty = false;
     await new Promise<void>((r) => this.mirror.write('', r));
-    const text = redact(this.serializer.serialize({ scrollback: maxLines }), this.knownSecrets);
+    // Saved for a NEW shell after a restart: plain history, no modes (see sanitizeSnapshot).
+    const text = redact(sanitizeSnapshot(this.serializer.serialize({ scrollback: maxLines, excludeModes: true })), this.knownSecrets);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const tmp = `${file}.tmp`;
     fs.writeFileSync(tmp, text);
