@@ -86,8 +86,9 @@ async function main(): Promise<void> {
     process.exit(0);
   };
   service.onShutdownRequested((handoff) => void shutdown(handoff ? 'update: handing terminals to the new version' : 'requested by GUI ("Exit completely")', handoff));
-  process.on('SIGINT', () => void shutdown('SIGINT'));
-  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  // Only "Exit completely" stops terminals. Being told to stop by the system (shutdown, sign-out,
+  // console close) saves every screen and keeps the terminals recorded, so they come back next time.
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK'] as const) process.on(sig, () => void shutdown(sig, true));
 
   // Idle exit: no GUI, no running terminals, and the user did not ask to keep it resident.
   function scheduleIdleCheck(): void {

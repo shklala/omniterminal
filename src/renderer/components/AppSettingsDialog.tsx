@@ -57,6 +57,7 @@ export function AppSettingsDialog({
         uiTheme: settings.uiTheme,
         language: settings.language,
         restoreAfterRestart: settings.restoreAfterRestart,
+        resumeClaude: settings.resumeClaude,
         suggestions: settings.suggestions,
         notifyAfterSeconds: settings.notifyAfterSeconds,
         minimizeToTray: settings.minimizeToTray,
@@ -254,6 +255,13 @@ function WindowTab({ settings, set }: { settings: S; set: (p: Partial<S>) => voi
         <span>
           <b>{t('Reopen terminals after a restart')}</b>
           <em>{t('Terminals that were running when Windows restarted start again, with their earlier output shown above. Programs inside them start fresh.')}</em>
+        </span>
+      </label>
+      <label className="check indent">
+        <input type="checkbox" checked={settings.resumeClaude} disabled={!settings.restoreAfterRestart} onChange={(e) => set({ resumeClaude: e.target.checked })} />
+        <span>
+          <b>{t('Resume Claude Code conversations')}</b>
+          <em>{t('A terminal that was running Claude Code reopens with claude --continue, in the folder it was in. Terminals that ran as administrator ask Windows for administrator rights again.')}</em>
         </span>
       </label>
       <label className="check">

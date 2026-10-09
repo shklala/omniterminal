@@ -43,10 +43,19 @@ shown, logged or exported.
 runs, open it again later, and the screen is exactly as you left it, including full-screen programs like `claude` or
 vim.
 
-**Reopen after a restart.** If Windows restarts, terminals that were running start again automatically, with their
-earlier output shown above. Programs inside them start fresh, but each terminal can run a different command when it
-comes back: set *After a restart or update, run instead* to `claude --continue` (the Claude Code template does this) and
-your last Claude conversation picks up where it was.
+**Reopen after a restart.** If Windows restarts or shuts down, terminals that were running come back the next time
+OmniTerminal opens, the way you left them:
+- with their earlier output (up to 10,000 lines, saved every 15 seconds),
+- in the folder they were in (Command Prompt and PowerShell report it as you work),
+- Claude Code conversations resumed with `claude --continue`,
+- terminals that ran as administrator ask Windows for administrator rights again.
+
+Each terminal can also run its own command when it comes back (*After a restart or update, run instead*).
+
+**Hibernate: everything exactly as it was.** A restart can only reopen terminals; the programs in them start again.
+*Hibernate this PC* (tray menu or command palette) uses Windows Hibernate instead: memory goes to disk and the PC turns
+off, and days later every terminal continues mid-command, Claude Code mid-answer included. OmniTerminal saves every
+screen first in case the battery runs out, and can turn hibernation on for you if it is off.
 
 **More than one shell per terminal.** `Ctrl+Shift+D` (or *Open another*) opens a second shell that shares the same
 accounts and variables, like opening a second window of the same terminal.
@@ -269,7 +278,7 @@ git clone https://github.com/shklala/omniterminal.git
 cd omniterminal
 npm install
 npm run dev        # development build with its own data folder
-npm test           # 108 unit and integration tests
+npm test           # 115 unit and integration tests
 npm run test:e2e   # 12 tests that drive the real app window
 npm run dist       # installer and portable zip in .\release
 ```

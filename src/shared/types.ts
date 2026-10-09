@@ -124,6 +124,8 @@ export interface AppSettings {
   restoreAfterRestart: boolean;
   /** PowerShell: suggestions from history (and plugins) while typing, shown as a list. */
   suggestions: boolean;
+  /** A terminal that was running Claude Code reopens with `claude --continue` after a restart. */
+  resumeClaude: boolean;
   /** Notify when a command that ran at least this many seconds finishes in a background tab (0 = off). */
   notifyAfterSeconds: number;
   /** Closing the window keeps OmniTerminal in the notification area (tray). */

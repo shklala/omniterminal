@@ -11,10 +11,19 @@ import type { ProfileManager } from '../profiles/profileManager';
 import { PtySession } from '../pty/ptySession';
 import { buildLaunchSpec } from '../pty/shells';
 import { cleanupOrphans, getProcessStartTime, getTreeStats, killTree, type TreeStats } from '../windows/processes';
+
+function isDirectory(p: string): boolean {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
 import { readRegistryEnvironment } from '../windows/registryEnv';
-import { elevatedShellCommand, getElevationStatus, wrapWithSudo } from '../windows/elevation';
+import { elevatedShellCommand, getElevationStatus, wrapWithSudo, type ElevationStatus } from '../windows/elevation';
 import { isPsReadLineInstalled } from '../windows/psreadline';
 import { sanitizeSnapshot } from '../pty/snapshot';
+import { parseSnapshotMeta, planElevatedRestore, restoreCommandFor, type SnapshotMeta } from './restore';
 import { baseProfileId, instanceNumber, isValidSessionKey, makeSessionKey } from '../../shared/sessionKey';
 
 export interface SessionEvents {
@@ -28,6 +37,8 @@ export interface SessionManagerOptions {
   skipRegistryEnv?: boolean;
   /** OmniTerminal's own PowerShell modules folder (PSReadLine for suggestions). */
   modulesDir?: string;
+  /** Administrator support check (tests pass a fake so they never show a Windows prompt). */
+  elevation?: () => Promise<ElevationStatus>;
 }
 
 /**
@@ -44,7 +55,12 @@ export class SessionManager {
   snapshotsEnabled: () => boolean = () => true;
   /** PowerShell suggestions while typing (app setting). */
   suggestionsEnabled: () => boolean = () => true;
+  /** Restored terminals that were running Claude Code run `claude --continue` (app setting). */
+  resumeClaudeEnabled: () => boolean = () => true;
+  /** Terminals being stopped on purpose (so a quick exit is not mistaken for a refused elevation). */
+  private readonly stopRequested = new Set<string>();
   private shells: ShellInfo[] = [];
+  private readonly elevation: () => Promise<ElevationStatus>;
 
   constructor(
     private readonly db: Db,
@@ -53,7 +69,9 @@ export class SessionManager {
     private readonly log: Logger,
     private readonly events: SessionEvents,
     private readonly opts: SessionManagerOptions = {},
-  ) {}
+  ) {
+    this.elevation = opts.elevation ?? getElevationStatus;
+  }
 
   setShells(shells: ShellInfo[]): void {
     this.shells = shells;
@@ -81,10 +99,12 @@ export class SessionManager {
     this.log.warn(`Recovered ${rows.length} orphaned session record(s); terminated ${killed.length} leftover process(es)`);
     if (opts.restore) {
       // These were running when Windows restarted (or the manager died): bring them back.
+      const adminPlan = wasElevated.size ? planElevatedRestore(await this.elevation().catch(() => null)) : 'normal';
       for (const profileId of toRestore) {
         if (!this.profiles.find(baseProfileId(profileId))) continue;
         try {
-          await this.start(profileId, undefined, false, wasElevated.has(profileId) ? 'elevated' : true);
+          if (wasElevated.has(profileId) && adminPlan === 'elevated') await this.restoreAsAdmin(profileId);
+          else await this.start(profileId, undefined, false, wasElevated.has(profileId) && adminPlan !== 'already' ? 'elevated' : true);
           this.log.info(`Restored terminal ${profileId} after restart`);
         } catch (e) {
           this.log.warn(`Could not restore terminal ${profileId}`, e);
@@ -94,9 +114,47 @@ export class SessionManager {
     return rows.length;
   }
 
+  /**
+   * A terminal that ran as administrator: start it through Windows sudo again (Windows asks for
+   * permission). If that is refused or fails, reopen it with normal rights and say so.
+   */
+  private async restoreAsAdmin(profileId: string): Promise<void> {
+    const fallback = (why: string) => {
+      this.log.warn(`Terminal ${profileId} reopened without administrator rights (${why})`);
+      return this.start(profileId, undefined, false, 'elevated');
+    };
+    let info: SessionInfo;
+    try {
+      info = await this.start(profileId, undefined, true, true);
+    } catch (e) {
+      await fallback((e as Error).message);
+      return;
+    }
+    const session = this.sessions.get(profileId);
+    if (!session || session.sessionId !== info.sessionId) return;
+    session.onExit((code) => {
+      // Declining the Windows prompt makes sudo exit at once with an error.
+      if (this.stopRequested.has(profileId) || code === 0 || Date.now() - session.startedAt > 120_000) return;
+      void fallback(`sudo exited with ${code}`).catch((e) => this.log.warn(`Could not restore terminal ${profileId}`, e));
+    });
+  }
+
   private snapshotFile(profileDir: string, key: string): string {
     const n = instanceNumber(key);
     return path.join(profileDir, 'cache', n > 1 ? `last-screen-${n}.ans` : 'last-screen.ans');
+  }
+
+  /** What the terminal was doing (folder, programs, admin), saved next to its screen. */
+  private metaFile(profileDir: string, key: string): string {
+    return this.snapshotFile(profileDir, key).replace(/\.ans$/, '.json');
+  }
+
+  readSnapshotMeta(profileDir: string, key: string): SnapshotMeta | null {
+    try {
+      return parseSnapshotMeta(fs.readFileSync(this.metaFile(profileDir, key), 'utf8'));
+    } catch {
+      return null;
+    }
   }
 
   /** Every 30 s, saves the screen of terminals that printed something, so a restart can restore it. */
@@ -114,12 +172,25 @@ export class SessionManager {
   /** `force` also saves screens that did not change since the last snapshot (before an update). */
   async saveSnapshots(force = false): Promise<void> {
     if (!this.snapshotsEnabled()) return;
-    for (const s of this.sessions.values()) {
-      if (!s.alive || (!s.dirty && !force)) continue;
+    const due = [...this.sessions.values()].filter((s) => s.alive && (s.dirty || force));
+    if (due.length === 0) return;
+    // Which programs are running in each terminal (to resume Claude Code after a restart).
+    const trees = await getTreeStats(due.map((s) => s.pid)).catch(() => ({}) as Record<number, TreeStats>);
+    for (const s of due) {
       const profile = this.profiles.find(baseProfileId(s.profileId));
       if (!profile) continue;
       try {
-        await s.saveSnapshot(this.snapshotFile(profile.dir, s.profileId));
+        await s.saveSnapshot(this.snapshotFile(profile.dir, s.profileId), Math.min(Math.max(profile.advanced.scrollback, 1000), 10_000));
+        const meta: SnapshotMeta = {
+          cwd: s.cwd,
+          title: s.title,
+          programs: trees[s.pid]?.programs ?? null,
+          elevated: s.elevated,
+          savedAt: Date.now(),
+        };
+        const file = this.metaFile(profile.dir, s.profileId);
+        fs.writeFileSync(`${file}.tmp`, JSON.stringify(meta));
+        fs.renameSync(`${file}.tmp`, file);
       } catch (e) {
         this.log.warn(`Could not save screen snapshot for ${s.profileId}`, e);
       }
@@ -131,7 +202,7 @@ export class SessionManager {
     for (const p of this.profiles.list()) {
       const dir = path.join(p.dir, 'cache');
       try {
-        for (const f of fs.readdirSync(dir)) if (/^last-screen(-\d+)?\.ans$/.test(f)) fs.rmSync(path.join(dir, f), { force: true });
+        for (const f of fs.readdirSync(dir)) if (/^last-screen(-\d+)?\.(ans|json)$/.test(f)) fs.rmSync(path.join(dir, f), { force: true });
       } catch {
         /* no cache folder yet */
       }
@@ -140,7 +211,9 @@ export class SessionManager {
 
   private clearSnapshot(profileId: string): void {
     const profile = this.profiles.find(baseProfileId(profileId));
-    if (profile) fs.rmSync(this.snapshotFile(profile.dir, profileId), { force: true });
+    if (!profile) return;
+    fs.rmSync(this.snapshotFile(profile.dir, profileId), { force: true });
+    fs.rmSync(this.metaFile(profile.dir, profileId), { force: true });
   }
 
   list(): SessionInfo[] {
@@ -197,15 +270,18 @@ export class SessionManager {
     const sessionId = crypto.randomUUID();
     const cols = size?.cols ?? profile.lastCols;
     const rows = size?.rows ?? profile.lastRows;
-    const cwd = this.resolveCwd(profile);
-    // Reopening after a restart or update can run a different command, e.g. "claude --continue".
-    const launchProfile = restore && profile.restoreCommand.trim() ? { ...profile, startupCommand: profile.restoreCommand } : profile;
+    // Reopening after a restart or update: the folder it was in, and the terminal's "after a restart"
+    // command, or `claude --continue` if Claude Code was running in it.
+    const meta = restore ? this.readSnapshotMeta(profile.dir, profileId) : null;
+    const cwd = meta?.cwd && isDirectory(meta.cwd) ? meta.cwd : this.resolveCwd(profile);
+    const resumeWith = restore ? restoreCommandFor(profile, meta, this.resumeClaudeEnabled()) : null;
+    const launchProfile = resumeWith ? { ...profile, startupCommand: resumeWith } : profile;
     const spec = buildLaunchSpec(launchProfile, this.shells, path.join(profile.dir, 'history'), { suggestions: this.suggestionsEnabled() });
     let launchFile = spec.file;
     let launchArgs = spec.args;
     if (elevated) {
       // "Run as Administrator": start the whole shell through Windows sudo (inline mode).
-      const status = await getElevationStatus();
+      const status = await this.elevation();
       const shellKind = this.shells.find((s) => s.id === profile.shellId)?.kind ?? '';
       if (status.managerElevated) {
         elevated = false; // already administrator: nothing to do
@@ -250,7 +326,7 @@ export class SessionManager {
         file: launchFile,
         args: launchArgs,
         elevated,
-        preamble: restore ? this.restoredOutput(profile.dir, profileId, restore === 'elevated') : undefined,
+        preamble: restore ? this.restoredOutput(profile.dir, profileId, restore === 'elevated', resumeWith) : undefined,
         cwd,
         env: built.env,
         cols,
@@ -284,8 +360,11 @@ export class SessionManager {
       .catch((e) => this.log.warn(`Could not record start time for pid ${session.pid}: ${(e as Error).message}`));
 
     session.onExit((code) => {
-      // The program ended by itself or was stopped: nothing to restore later.
-      this.clearSnapshot(profileId);
+      // The program ended by itself or was stopped: nothing to restore later. A restored terminal
+      // that ends within two minutes (e.g. the administrator prompt was refused) keeps its screen
+      // for the next attempt.
+      if (!(restore && Date.now() - session.startedAt < 120_000 && !this.stopRequested.has(profileId))) this.clearSnapshot(profileId);
+      this.stopRequested.delete(profileId);
       if (this.db.isOpen) this.db.run("UPDATE sessions SET status = 'exited', ended_at = ?, exit_code = ? WHERE id = ?", [Date.now(), code, sessionId]);
       this.profileLog(profile, `session ${sessionId} exited code=${code}`);
       this.log.info(`Session ${sessionId} exited (${code})`);
@@ -298,12 +377,13 @@ export class SessionManager {
     return session;
   }
 
-  /** Saved screen from before the restart, followed by a dim marker line (and an admin note). */
-  private restoredOutput(profileDir: string, key: string, wasElevated = false): string | undefined {
+  /** Saved screen from before the restart, followed by a dim marker line (and admin / resume notes). */
+  private restoredOutput(profileDir: string, key: string, wasElevated = false, resumeWith: string | null = null): string | undefined {
     const file = this.snapshotFile(profileDir, key);
-    const adminNote = wasElevated
-      ? '\x1b[33m[This terminal ran as administrator before the restart. It reopened WITHOUT administrator rights; use Run as Administrator to elevate it again.]\x1b[0m\r\n'
-      : '';
+    const adminNote =
+      (wasElevated
+        ? '\x1b[33m[This terminal ran as administrator before the restart. It reopened WITHOUT administrator rights; use Run as Administrator to elevate it again.]\x1b[0m\r\n'
+        : '') + (resumeWith ? `\x1b[2m[Resuming with: ${resumeWith}]\x1b[0m\r\n` : '');
     try {
       if (!fs.existsSync(file) || fs.statSync(file).size > 8 * 1024 * 1024) return adminNote || undefined;
       // Older versions saved terminal modes too (mouse tracking, alternate screen); drop them.
@@ -411,6 +491,7 @@ export class SessionManager {
   async stop(profileId: string): Promise<void> {
     const s = this.sessions.get(profileId);
     if (!s) return;
+    this.stopRequested.add(profileId);
     if (s.alive) {
       const exited = new Promise<void>((r) => s.onExit(() => r()));
       s.kill();
@@ -429,7 +510,7 @@ export class SessionManager {
   async restart(profileId: string, size?: { cols: number; rows: number }, elevated = false): Promise<SessionInfo> {
     if (elevated) {
       // Check before stopping, so a refused elevation never leaves the terminal stopped.
-      const status = await getElevationStatus();
+      const status = await this.elevation();
       if (!status.managerElevated && status.sudo !== 'inline') {
         throw new ValidationError('SUDO_NOT_INLINE: Windows sudo is not enabled in inline mode.');
       }

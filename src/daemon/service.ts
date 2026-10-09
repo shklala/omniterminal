@@ -19,7 +19,7 @@ import { Db } from './persistence/db';
 import { ProfileManager, type ProfileUpdate } from './profiles/profileManager';
 import { detectShells } from './pty/shells';
 import { SessionManager, type SessionEvents } from './sessions/sessionManager';
-import { elevatedShellCommand, getElevationStatus } from './windows/elevation';
+import { elevatedShellCommand, getElevationStatus, type ElevationStatus } from './windows/elevation';
 import { baseProfileId } from '../shared/sessionKey';
 
 export interface ServiceOptions {
@@ -28,6 +28,8 @@ export interface ServiceOptions {
   events: SessionEvents;
   crypto?: SecretCrypto;
   skipRegistryEnv?: boolean;
+  /** Replaces the administrator support check (tests). */
+  elevation?: () => Promise<ElevationStatus>;
 }
 
 type Size = { cols: number; rows: number } | undefined;
@@ -88,13 +90,15 @@ export class OmniService {
     this.profiles.recoverFromMetadata();
     this.sessions = new SessionManager(this.db, this.profiles, secrets, log, this.opts.events, {
       skipRegistryEnv: this.opts.skipRegistryEnv,
+      elevation: this.opts.elevation,
       modulesDir: this.modulesDir,
     });
     this.sessions.setShells(await detectShells());
     await this.sessions.recoverOrphans({ restore: this.getSettings().restoreAfterRestart });
     this.sessions.snapshotsEnabled = () => this.getSettings().restoreAfterRestart;
     this.sessions.suggestionsEnabled = () => this.getSettings().suggestions;
-    this.sessions.startSnapshots(Number(process.env.OMNITERMINAL_SNAPSHOT_MS) || 30_000);
+    this.sessions.resumeClaudeEnabled = () => this.getSettings().resumeClaude;
+    this.sessions.startSnapshots(Number(process.env.OMNITERMINAL_SNAPSHOT_MS) || 15_000);
     this.db.flush();
   }
 
@@ -407,6 +411,9 @@ export class OmniService {
         this.sessions.write(id, (shell!.kind === 'gitbash' ? '\x15' : '\x1b') + cmd + '\r');
         return true;
       }
+      case 'sessions.saveNow':
+        await this.sessions.saveSnapshots(true);
+        return true;
       case 'sessions.stats':
         return this.sessions.stats();
       case 'sessions.text':

@@ -53,6 +53,9 @@ interface OmniBridge {
   enableSudo(): Promise<{ ok: boolean; status: ElevationStatus }>;
   openElevatedWindow(cwd: string): Promise<boolean>;
   focusWindow(): Promise<void>;
+  hibernateStatus(): Promise<boolean>;
+  enableHibernate(): Promise<boolean>;
+  hibernate(): Promise<void>;
   updateStatus(): Promise<UpdateStatus>;
   checkForUpdates(): Promise<UpdateStatus>;
   installUpdate(): Promise<void>;

@@ -63,6 +63,8 @@ export class PtySession {
   private typedStartup = false;
   /** Output arrived since the last screen snapshot was saved. */
   dirty = false;
+  /** Folder the shell is in (from OSC 9;9; the start folder until the first prompt reports it). */
+  cwd: string;
 
   constructor(opts: PtySessionOptions) {
     this.sessionId = opts.sessionId;
@@ -81,6 +83,14 @@ export class PtySession {
     this.serializer = new SerializeAddon();
     this.mirror.loadAddon(this.serializer as never);
     this.mirror.onTitleChange((t) => (this.title = t));
+    // Current folder reported by the shell's prompt (OSC 9;9), used to reopen there after a restart.
+    this.cwd = opts.cwd;
+    this.mirror.parser.registerOscHandler(9, (data) => {
+      if (!data.startsWith('9;')) return false;
+      const dir = data.slice(2).trim().replace(/^"(.*)"$/, '$1');
+      if (dir) this.cwd = dir;
+      return true;
+    });
     if (opts.preamble) {
       // Push the restored output into scrollback so the new shell's first screen does not overwrite it.
       this.mirror.write(opts.preamble + '\r\n'.repeat(opts.rows));

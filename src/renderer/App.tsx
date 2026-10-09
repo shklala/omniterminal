@@ -3,6 +3,7 @@ import type { AppState, Profile, SessionInfo, Workspace } from '../shared/types'
 import type { ResourceStats } from './util';
 import { api, bridge, errorMessage, type DaemonStatus, type ElevationStatus, type UpdateStatus } from './api';
 import { AccountsDialog } from './components/AccountsDialog';
+import { HibernateDialog } from './components/HibernateDialog';
 import { AppSettingsDialog, type SettingsTab } from './components/AppSettingsDialog';
 import { ContextMenu, Sidebar, TabBar, TopBar, type MenuItem } from './components/Chrome';
 import { Dashboard } from './components/Dashboard';
@@ -34,6 +35,7 @@ type DialogState =
   | { kind: 'save-workspace' }
   | { kind: 'delete-workspace'; workspace: Workspace }
   | { kind: 'install-update'; version: string }
+  | { kind: 'hibernate' }
   | null;
 
 interface Toast {
@@ -207,6 +209,7 @@ export function App() {
   useEffect(() => {
     const offCmd = bridge.onCommand((name) => {
       if (name === 'new-terminal') setDialog({ kind: 'new' });
+      else if (name === 'hibernate') setDialog({ kind: 'hibernate' });
       else if (name === 'exit') setDialog({ kind: 'exit' });
     });
     const offNotice = bridge.onNotice((text) => toastRef.current(text, 'error'));
@@ -940,6 +943,7 @@ export function App() {
     ...[
       ['en', 'English'], ['ar', 'العربية'], ['es', 'Español'], ['fr', 'Français'], ['de', 'Deutsch'], ['zh', '简体中文'],
     ].map(([id, native]) => ({ id: `a:lang-${id}`, label: `${t('Language')}: ${native}`, hint: native, icon: 'globe', group: 'Actions' as const, run: () => setAppSetting({ language: id }) })),
+    { id: 'a:hibernate', label: t('Hibernate this PC (everything stays as it is)'), icon: 'power', group: 'Actions', run: () => setDialog({ kind: 'hibernate' }) },
     { id: 'a:exit', label: t('Exit Completely (stop everything)'), icon: 'power', group: 'Actions', run: () => setDialog({ kind: 'exit' }) },
   ];
 
@@ -1218,6 +1222,7 @@ export function App() {
           }}
         />
       )}
+      {dialog?.kind === 'hibernate' && <HibernateDialog onClose={() => setDialog(null)} toast={toast} />}
       {dialog?.kind === 'delete' && dialogProfile && (
         <ConfirmDialog
           title={t('Delete "{name}"?', { name: dialogProfile.name })}

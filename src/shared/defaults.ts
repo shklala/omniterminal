@@ -1,6 +1,6 @@
 import type { AdvancedSettings, AppSettings, Appearance } from './types';
 
-export const APP_VERSION = '1.3.2';
+export const APP_VERSION = '1.4.0';
 export const PROTOCOL_VERSION = 1;
 
 export const DEFAULT_APPEARANCE: Appearance = {
@@ -30,6 +30,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   language: 'en',
   restoreAfterRestart: true,
   suggestions: true,
+  resumeClaude: true,
   notifyAfterSeconds: 15,
   minimizeToTray: false,
   globalHotkey: '',

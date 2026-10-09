@@ -98,6 +98,8 @@ export interface TreeStats {
   processes: number;
   /** Names of the direct children of the shell (what is running "in" the terminal). */
   children: string[];
+  /** Every program in the terminal's process tree (lower case, no .exe), shell excluded. */
+  programs: string[];
 }
 
 /** Memory / process count for each root PID's process tree, from one Win32_Process snapshot. */
@@ -126,7 +128,7 @@ $all = @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Wor
   for (const root of rootPids) {
     const r = byPid.get(root);
     if (!r) continue;
-    const stats: TreeStats = { memory: 0, processes: 0, children: [] };
+    const stats: TreeStats = { memory: 0, processes: 0, children: [], programs: [] };
     const seen = new Set<number>();
     const stack = [r];
     while (stack.length) {
@@ -135,6 +137,7 @@ $all = @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Wor
       seen.add(cur.p);
       stats.memory += cur.m;
       stats.processes += 1;
+      if (cur !== r && !/^(conhost|openconsole)\.exe$/i.test(cur.n)) stats.programs.push(cur.n.replace(/\.exe$/i, '').toLowerCase());
       for (const c of byParent.get(cur.p) ?? []) stack.push(c);
     }
     // conhost/OpenConsole belong to the pseudoconsole, not to what the user runs.

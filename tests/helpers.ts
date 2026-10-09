@@ -31,7 +31,11 @@ export interface TestContext {
   cleanup(): Promise<void>;
 }
 
-export async function makeService(home = tempHome(), crypto: SecretCrypto = fakeCrypto): Promise<TestContext> {
+/** Tests never ask Windows for administrator rights: by default sudo looks switched off. */
+export type FakeElevation = () => Promise<{ managerElevated: boolean; sudo: 'unavailable' | 'disabled' | 'newWindow' | 'inputClosed' | 'inline'; sudoPath: string }>;
+const noSudo: FakeElevation = async () => ({ managerElevated: false, sudo: 'disabled', sudoPath: '' });
+
+export async function makeService(home = tempHome(), crypto: SecretCrypto = fakeCrypto, elevation: FakeElevation = noSudo): Promise<TestContext> {
   const paths = getAppPaths({ ...process.env, OMNITERMINAL_HOME: home });
   const log = new Logger(path.join(paths.logs, 'test.log'));
   const events: TestContext['events'] = { data: [], exits: [], changes: [] };
@@ -40,6 +44,7 @@ export async function makeService(home = tempHome(), crypto: SecretCrypto = fake
     log,
     crypto,
     skipRegistryEnv: true,
+    elevation,
     events: {
       onData: (_p, _s, d) => events.data.push(d),
       onExit: (profileId, _s, exitCode) => events.exits.push({ profileId, exitCode }),

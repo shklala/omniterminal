@@ -197,6 +197,66 @@ describe('Restore and update hand-off', () => {
     expect(saved).not.toMatch(/\x1b\[\?[0-9;]*[hl]/);
   }, 30000);
 
+  it('Command Prompt reopens in the folder it was in, and the running programs are recorded', async () => {
+    ctx = await makeService();
+    const p = await ctx.service.profiles.create({ name: 'CwdCmd', shellId: 'cmd' });
+    await ctx.service.sessions.start(p.id);
+    const s = () => ctx!.service.sessions.get(p.id)!;
+    await waitFor(async () => /[A-Z]:\\.*>/.test(await ctx!.service.sessions.textContent(p.id)), 20000);
+    ctx.service.sessions.write(p.id, 'cd /d C:\\Windows\\System32\r');
+    await waitFor(() => s().cwd.toLowerCase() === 'c:\\windows\\system32', 10000);
+    // Something running in the terminal at save time is recorded.
+    ctx.service.sessions.write(p.id, 'ping -n 30 127.0.0.1\r');
+    await waitFor(async () => (await ctx!.service.sessions.textContent(p.id)).includes('Pinging'), 10000);
+    await ctx.service.sessions.saveSnapshots(true);
+    const meta = ctx.service.sessions.readSnapshotMeta(p.dir, p.id);
+    expect(meta?.cwd.toLowerCase()).toBe('c:\\windows\\system32');
+    expect(meta?.programs).toContain('ping');
+
+    // Windows restarts: the record is still "running", the screen and its note are on disk.
+    const saved = ['last-screen.ans', 'last-screen.json'].map((f) => [f, fs.readFileSync(path.join(p.dir, 'cache', f), 'utf8')] as const);
+    await ctx.service.sessions.stop(p.id);
+    for (const [f, text] of saved) fs.writeFileSync(path.join(p.dir, 'cache', f), text);
+    ctx.service.db.run(
+      "INSERT INTO sessions (id, profile_id, pid, pid_start, daemon_pid, started_at, status) VALUES (?, ?, NULL, NULL, 1, ?, 'running')",
+      [crypto.randomUUID(), p.id, Date.now()],
+    );
+    await ctx.service.sessions.recoverOrphans({ restore: true });
+    await waitFor(async () => /C:\\Windows\\System32>/i.test(await ctx!.service.sessions.textContent(p.id)), 20000);
+    const t = await ctx.service.sessions.textContent(p.id);
+    expect(t).toContain('Pinging'); // earlier output is back too
+  }, 60000);
+
+  it('PowerShell reports its folder without breaking the prompt', async () => {
+    ctx = await makeService();
+    const p = await ctx.service.profiles.create({ name: 'CwdPs', shellId: 'powershell' });
+    await ctx.service.sessions.start(p.id);
+    await waitFor(async () => /PS .*>/.test(await ctx!.service.sessions.textContent(p.id)), 40000);
+    ctx.service.sessions.write(p.id, 'Set-Location C:\\Windows\r');
+    await waitFor(() => ctx!.service.sessions.get(p.id)!.cwd.toLowerCase() === 'c:\\windows', 15000);
+    await waitFor(async () => /PS C:\\Windows>/i.test(await ctx!.service.sessions.textContent(p.id)), 10000);
+  }, 60000);
+
+  it('asks for administrator rights again for a terminal that ran as administrator, and falls back if refused', async () => {
+    // Pretend Windows sudo is on, but make "sudo" fail at once, like a refused Windows prompt.
+    const failingSudo = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'where.exe');
+    let asked = 0;
+    ctx = await makeService(tempHome(), undefined, async () => {
+      asked++;
+      return { managerElevated: false, sudo: 'inline', sudoPath: failingSudo };
+    });
+    const p = await ctx.service.profiles.create({ name: 'WasAdmin2', shellId: 'cmd' });
+    ctx.service.db.run(
+      "INSERT INTO sessions (id, profile_id, pid, pid_start, daemon_pid, started_at, status, elevated) VALUES (?, ?, NULL, NULL, 1, ?, 'running', 1)",
+      [crypto.randomUUID(), p.id, Date.now()],
+    );
+    await ctx.service.sessions.recoverOrphans({ restore: true });
+    expect(asked).toBeGreaterThan(0);
+    // The refused elevation falls back to a normal terminal that says so.
+    await waitFor(async () => (await ctx!.service.sessions.textContent(p.id).catch(() => '')).includes('WITHOUT administrator rights'), 20000);
+    await waitFor(() => ctx!.service.sessions.get(p.id)?.alive === true && ctx!.service.sessions.get(p.id)?.elevated === false, 10000);
+  }, 40000);
+
   it('hands running terminals to the next session manager with their screens', async () => {
     const home = tempHome();
     const first = await makeService(home);

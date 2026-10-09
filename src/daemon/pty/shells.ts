@@ -124,6 +124,7 @@ export function powershellBootstrap(historyFile: string, startupCommand: string,
     `  }`,
     `} catch { }`,
     ...PS_SSH_FUNCTIONS,
+    ...PS_CWD_PROMPT,
   ];
   if (startupCommand.trim()) lines.push(startupCommand);
   return lines.join('\n');
@@ -149,6 +150,26 @@ function psSuggestionLines(): string[] {
     `    Remove-Variable __omniV, __omniSrc -ErrorAction SilentlyContinue`,
   ];
 }
+
+/** cmd: invisible OSC 9;9 with the current folder in front of the normal prompt. */
+export const CMD_CWD_PROMPT = '$E]9;9;$P$E\\';
+
+/**
+ * PowerShell: report the current folder (OSC 9;9) before the user's own prompt runs. The user's
+ * prompt still sees the real success/failure of the last command in $? (a failing no-op restores it).
+ */
+const PS_CWD_PROMPT = [
+  `try {`,
+  `  $global:__omniOrigPrompt = $function:prompt`,
+  `  function global:prompt {`,
+  `    $__omniOk = $?`,
+  `    $__omniLoc = $executionContext.SessionState.Path.CurrentLocation`,
+  `    if ($__omniLoc.Provider.Name -eq 'FileSystem') { [Console]::Write("$([char]27)]9;9;$($__omniLoc.ProviderPath)$([char]27)\\") }`,
+  `    if (-not $__omniOk) { Write-Error 'x' -ErrorAction Ignore }`,
+  `    & $global:__omniOrigPrompt`,
+  `  }`,
+  `} catch { }`,
+];
 
 export interface LaunchOptions {
   suggestions?: boolean;
@@ -186,7 +207,8 @@ export function buildLaunchSpec(profile: Profile, shells: ShellInfo[], historyDi
       // with /S, cmd strips exactly the outer quotes and runs the rest verbatim.
       const extra = profile.shellArgs.join(' ');
       const raw = ['/D', extra, startup ? `/S /K "${startup}"` : ''].filter(Boolean).join(' ');
-      return { file: shell.path, args: raw, typeOnReady: null, extraEnv: { PROMPT: process.env.PROMPT || '$P$G' } };
+      // The prompt also reports the current folder (OSC 9;9), so a restore can reopen there.
+      return { file: shell.path, args: raw, typeOnReady: null, extraEnv: { PROMPT: CMD_CWD_PROMPT + (process.env.PROMPT || '$P$G') } };
     }
     case 'gitbash':
       return {

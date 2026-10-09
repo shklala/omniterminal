@@ -12,7 +12,8 @@ import {
   validateEnvName,
   validateProfileName,
 } from '../src/shared/validation';
-import { powershellBootstrap } from '../src/daemon/pty/shells';
+import { CMD_CWD_PROMPT, powershellBootstrap } from '../src/daemon/pty/shells';
+import { claudeWasRunning, planElevatedRestore, restoreCommandFor, type SnapshotMeta } from '../src/daemon/sessions/restore';
 import { Terminal as HeadlessTerminal } from '@xterm/headless';
 import { createLinkProvider, lastLink } from '../src/renderer/terminal/links';
 import { parseVersion } from '../src/daemon/windows/toolCheck';
@@ -265,5 +266,35 @@ describe('Installed tools: version parsing', () => {
     expect(parseVersion('WARNING: update available\nClient Version: v1.34.1\nKustomize Version: v5')).toBe('1.34.1');
     expect(parseVersion('2.1.293 (Claude Code)')).toBe('2.1.293');
     expect(parseVersion('')).toBeNull();
+  });
+});
+
+describe('Restoring after a restart: what to run', () => {
+  const meta = (m: Partial<SnapshotMeta>): SnapshotMeta => ({ cwd: 'C:\\x', title: '', programs: [], elevated: false, savedAt: 1, ...m });
+  it('resumes Claude Code only when it was running', () => {
+    expect(claudeWasRunning(meta({ programs: ['claude'] }))).toBe(true);
+    expect(claudeWasRunning(meta({ programs: ['node'], title: 'claude' }))).toBe(true); // npm install
+    expect(claudeWasRunning(meta({ programs: [], title: 'claude' }))).toBe(false); // title left over after exit
+    expect(claudeWasRunning(meta({ programs: null, title: 'C:\\Windows\\system32\\cmd.exe - claude' }))).toBe(true);
+    expect(claudeWasRunning(meta({ programs: ['ping'] }))).toBe(false);
+    expect(claudeWasRunning(null)).toBe(false);
+  });
+  it('prefers the terminal\'s own restore command, then claude --continue', () => {
+    expect(restoreCommandFor({ restoreCommand: 'npm run dev' }, meta({ programs: ['claude'] }), true)).toBe('npm run dev');
+    expect(restoreCommandFor({ restoreCommand: '' }, meta({ programs: ['claude'] }), true)).toBe('claude --continue');
+    expect(restoreCommandFor({ restoreCommand: '' }, meta({ programs: ['claude'] }), false)).toBeNull();
+    expect(restoreCommandFor({ restoreCommand: '  ' }, meta({ programs: [] }), true)).toBeNull();
+  });
+  it('asks for administrator rights again only when Windows sudo can do it in the tab', () => {
+    expect(planElevatedRestore({ managerElevated: false, sudo: 'inline' })).toBe('elevated');
+    expect(planElevatedRestore({ managerElevated: true, sudo: 'disabled' })).toBe('already');
+    expect(planElevatedRestore({ managerElevated: false, sudo: 'disabled' })).toBe('normal');
+    expect(planElevatedRestore(null)).toBe('normal');
+  });
+  it('makes shells report their folder', () => {
+    expect(CMD_CWD_PROMPT).toBe('$E]9;9;$P$E\\');
+    const ps = powershellBootstrap('C:\\h.txt', '', 'T');
+    expect(ps).toContain(']9;9;');
+    expect(ps).toContain("Write-Error 'x' -ErrorAction Ignore"); // keeps $? for the user's prompt
   });
 });

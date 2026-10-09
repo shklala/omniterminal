@@ -81,6 +81,7 @@ export class Desktop {
       Menu.buildFromTemplate([
         { label: `${L[0]}${hk}`, click: () => this.show() },
         { label: L[1], click: () => { this.show(); this.host.command('new-terminal'); } },
+        { label: L[4], click: () => { this.show(); this.host.command('hibernate'); } },
         { type: 'separator' },
         // app.quit() goes through the normal goodbye to the session manager (main.ts before-quit).
         { label: L[2], click: () => app.quit() },
@@ -210,13 +211,13 @@ export class Desktop {
 }
 
 /** Tray menu: show, new terminal, close window, exit completely. */
-const TRAY_TEXT: Record<string, [string, string, string, string]> = {
-  en: ['Show OmniTerminal', 'New terminal…', 'Close window (terminals keep running)', 'Exit completely…'],
-  ar: ['إظهار OmniTerminal', 'طرفية جديدة…', 'إغلاق النافذة (تستمر الطرفيات في العمل)', 'الخروج الكامل…'],
-  es: ['Mostrar OmniTerminal', 'Nuevo terminal…', 'Cerrar ventana (los terminales siguen en ejecución)', 'Salir por completo…'],
-  fr: ['Afficher OmniTerminal', 'Nouveau terminal…', 'Fermer la fenêtre (les terminaux continuent)', 'Quitter complètement…'],
-  de: ['OmniTerminal anzeigen', 'Neues Terminal…', 'Fenster schließen (Terminals laufen weiter)', 'Vollständig beenden…'],
-  zh: ['显示 OmniTerminal', '新建终端…', '关闭窗口（终端继续运行）', '完全退出…'],
+const TRAY_TEXT: Record<string, [string, string, string, string, string]> = {
+  en: ['Show OmniTerminal', 'New terminal…', 'Close window (terminals keep running)', 'Exit completely…', 'Hibernate this PC…'],
+  ar: ['إظهار OmniTerminal', 'طرفية جديدة…', 'إغلاق النافذة (تستمر الطرفيات في العمل)', 'الخروج الكامل…', 'إسبات هذا الجهاز…'],
+  es: ['Mostrar OmniTerminal', 'Nuevo terminal…', 'Cerrar ventana (los terminales siguen en ejecución)', 'Salir por completo…', 'Hibernar este equipo…'],
+  fr: ['Afficher OmniTerminal', 'Nouveau terminal…', 'Fermer la fenêtre (les terminaux continuent)', 'Quitter complètement…', 'Mettre ce PC en veille prolongée…'],
+  de: ['OmniTerminal anzeigen', 'Neues Terminal…', 'Fenster schließen (Terminals laufen weiter)', 'Vollständig beenden…', 'Diesen PC in den Ruhezustand versetzen…'],
+  zh: ['显示 OmniTerminal', '新建终端…', '关闭窗口（终端继续运行）', '完全退出…', '让这台电脑休眠…'],
 };
 
 /** "Ctrl+Alt+T" -> Electron accelerator ("Ctrl+Alt+T"; Win -> Super). */

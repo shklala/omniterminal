@@ -304,6 +304,19 @@ function registerIpc(): void {
     if (win && !win.isFocused()) win.flashFrame(true);
   });
   handle('omni:focus-window', () => desktop.show());
+  // Windows Hibernate: everything in memory, every terminal and the programs in them, is kept as is.
+  handle('omni:hibernate-status', () => hibernateEnabled());
+  handle('omni:enable-hibernate', async () => {
+    // One-time, user-initiated: Windows shows a UAC prompt for "powercfg /hibernate on".
+    const powercfg = path.join(systemRoot(), 'System32', 'powercfg.exe');
+    await runHiddenPowerShell(`Start-Process -FilePath '${powercfg}' -ArgumentList '/hibernate','on' -Verb RunAs -Wait -WindowStyle Hidden`);
+    return hibernateEnabled();
+  });
+  handle('omni:hibernate', async () => {
+    // Save every screen first: if the battery dies while hibernated, the restore still has them.
+    await bridge.call('sessions.saveNow').catch(() => undefined);
+    spawn(path.join(systemRoot(), 'System32', 'shutdown.exe'), ['/h'], { windowsHide: true, detached: true, stdio: 'ignore' }).unref();
+  });
   handle('omni:quit-gui', () => {
     app.quit();
   });
@@ -311,6 +324,18 @@ function registerIpc(): void {
 
 function systemRoot(): string {
   return process.env.SystemRoot || 'C:\\Windows';
+}
+
+/** HibernateEnabled in the registry (language-independent, unlike powercfg's text). */
+function hibernateEnabled(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const reg = path.join(systemRoot(), 'System32', 'reg.exe');
+    const child = spawn(reg, ['query', 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power', '/v', 'HibernateEnabled'], { windowsHide: true });
+    let out = '';
+    child.stdout.on('data', (d) => (out += d));
+    child.on('error', () => resolve(false));
+    child.on('close', () => resolve(/HibernateEnabled\s+REG_DWORD\s+0x1\b/i.test(out)));
+  });
 }
 
 function runHiddenPowerShell(script: string): Promise<number> {
